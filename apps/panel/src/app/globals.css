@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Clash+Display:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground font-sans antialiased; }
+}
+
+@layer utilities {
+  .text-glow-neon { text-shadow: 0 0 10px rgba(0,188,242,0.5), 0 0 20px rgba(0,188,242,0.3); }
+  .glass { @apply bg-card/80 backdrop-blur-xl border border-border/50; }
+  .neon-border { @apply border border-neon-cyan/30; }
+  .shadow-neon-sm { box-shadow: 0 0 10px rgba(0,188,242,0.15); }
+  .shadow-neon { box-shadow: 0 0 20px rgba(0,188,242,0.3); }
+}

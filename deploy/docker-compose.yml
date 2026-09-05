@@ -1,0 +1,51 @@
+services:
+  controlplane:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.controlplane
+    ports:
+      - "5100:5100"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - DATA_DIR=/data
+    volumes:
+      - controlplane-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  panel:
+    build:
+      context: ../apps/panel
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_CONTROLPLANE_URL=http://controlplane:5100
+    depends_on:
+      controlplane:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mcp-server-default:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    environment:
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - TRANSPORT=http
+    ports:
+      - "5200:5200"
+    depends_on:
+      controlplane:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  controlplane-data:

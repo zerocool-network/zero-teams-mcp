@@ -1,0 +1,142 @@
+using System.ComponentModel;
+using System.Text.Json;
+using ModelContextProtocol.Server;
+using Microsoft.Graph;
+using Microsoft.Graph.Models;
+using ZeroTeamsMcp.Core.Graph;
+
+namespace ZeroTeamsMcp.Server.Tools;
+
+[McpServerToolType]
+public sealed class TeamsChatTools
+{
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
+    [McpServerTool(Name = "teams_list_chats")]
+    public static async Task<string> ListChats(
+        GraphService graph,
+        [Description("Opcional. Máximo de chats a retornar. Default: 50.")] int top = 50,
+        [Description("Opcional. Skip para paginación.")] int skip = 0)
+    {
+        var client = await graph.GetClientAsync();
+        var result = await client.Chats.GetAsync(cfg =>
+        {
+            cfg.QueryParameters.Top = top;
+            cfg.QueryParameters.Skip = skip;
+        });
+
+        var chats = result?.Value?.Select(c => new
+        {
+            c.Id,
+            Topic = c.Topic,
+            ChatType = c.ChatType?.ToString(),
+            c.WebUrl,
+            c.CreatedDateTime
+        }) ?? [];
+
+        return JsonSerializer.Serialize(chats, JsonOpts);
+    }
+
+    [McpServerTool(Name = "teams_create_chat")]
+    public static async Task<string> CreateChat(
+        GraphService graph,
+        [Description("Tipo de chat: 'oneOnOne' o 'group'.")] string chatType,
+        [Description("IDs de usuarios separados por comas (UUIDs).")] string memberIds,
+        [Description("Opcional. Topic/título del chat (solo para group).")] string? topic = null)
+    {
+        var client = await graph.GetClientAsync();
+        var ids = memberIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var members = ids.Select(id => new AadUserConversationMember
+        {
+            Roles = new List<string>(),
+            AdditionalData = new Dictionary<string, object>
+            {
+                ["user@odata.bind"] = $"https://graph.microsoft.com/v1.0/users('{id}')"
+            }
+        }).ToList<ConversationMember>();
+
+        var chat = new Chat
+        {
+            ChatType = chatType == "group" ? ChatType.Group : ChatType.OneOnOne,
+            Members = members
+        };
+
+        if (chatType == "group" && !string.IsNullOrEmpty(topic))
+        {
+            chat.Topic = topic;
+        }
+
+        var created = await client.Chats.PostAsync(chat);
+
+        return JsonSerializer.Serialize(new
+        {
+            created?.Id,
+            created?.Topic,
+            ChatType = created?.ChatType?.ToString(),
+            created?.WebUrl,
+            created?.CreatedDateTime
+        }, JsonOpts);
+    }
+
+    [McpServerTool(Name = "teams_send_message")]
+    public static async Task<string> SendMessage(
+        GraphService graph,
+        [Description("ID del chat (UUID).")] string chatId,
+        [Description("Contenido del mensaje (texto plano o HTML).")] string content,
+        [Description("Opcional. ID del mensaje al que responde.")] string? replyToId = null)
+    {
+        var client = await graph.GetClientAsync();
+
+        var message = new ChatMessage
+        {
+            Body = new ItemBody
+            {
+                ContentType = BodyType.Html,
+                Content = content
+            },
+            ReplyToId = replyToId
+        };
+
+        var sent = await client.Chats[chatId].Messages.PostAsync(message);
+
+        return JsonSerializer.Serialize(new
+        {
+            sent?.Id,
+            sent?.CreatedDateTime,
+            Content = content
+        }, JsonOpts);
+    }
+
+    [McpServerTool(Name = "teams_get_chat_messages")]
+    public static async Task<string> GetChatMessages(
+        GraphService graph,
+        [Description("ID del chat (UUID).")] string chatId,
+        [Description("Opcional. Máximo de mensajes. Default: 20.")] int top = 20,
+        [Description("Opcional. Skip para paginación.")] int skip = 0)
+    {
+        var client = await graph.GetClientAsync();
+        var result = await client.Chats[chatId].Messages.GetAsync(cfg =>
+        {
+            cfg.QueryParameters.Top = top;
+            cfg.QueryParameters.Skip = skip;
+        });
+
+        var messages = result?.Value?.Select(m => new
+        {
+            m.Id,
+            From = m.From?.User?.DisplayName,
+            FromUserId = m.From?.User?.Id,
+            Content = m.Body?.Content,
+            ContentType = m.Body?.ContentType?.ToString(),
+            m.CreatedDateTime,
+            m.ReplyToId
+        }) ?? [];
+
+        return JsonSerializer.Serialize(messages, JsonOpts);
+    }
+}
