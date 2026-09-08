@@ -106,6 +106,74 @@ public static class TenantEndpoints
                 }
             });
         });
+
+        routes.MapGet("/health/detailed", (TenantStore store) =>
+        {
+            var tenants = store.GetAll();
+            var details = tenants.Select(t =>
+            {
+                var consent = store.GetConsent(t.TenantId);
+                return new
+                {
+                    t.TenantId,
+                    t.DisplayName,
+                    ConsentStatus = consent?.Status.ToString() ?? "Unknown",
+                    consent?.GrantedAt,
+                    consent?.RevokedAt,
+                    consent?.ErrorMessage
+                };
+            });
+            return Results.Ok(new
+            {
+                Status = "healthy",
+                Timestamp = DateTime.UtcNow,
+                Tenants = details
+            });
+        });
+    }
+
+    public static void MapMetricsEndpoints(this IEndpointRouteBuilder routes)
+    {
+        routes.MapGet("/metrics", () =>
+        {
+            var process = System.Diagnostics.Process.GetCurrentProcess();
+            var gc = GC.GetGCMemoryInfo();
+            
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("# HELP process_cpu_seconds_total Total CPU time in seconds");
+            sb.AppendLine("# TYPE process_cpu_seconds_total counter");
+            sb.AppendLine($"process_cpu_seconds_total {process.TotalProcessorTime.TotalSeconds:F3}");
+            
+            sb.AppendLine("# HELP process_memory_bytes Current memory usage in bytes");
+            sb.AppendLine("# TYPE process_memory_bytes gauge");
+            sb.AppendLine($"process_memory_bytes {process.WorkingSet64}");
+            
+            sb.AppendLine("# HELP process_virtual_memory_bytes Virtual memory size in bytes");
+            sb.AppendLine("# TYPE process_virtual_memory_bytes gauge");
+            sb.AppendLine($"process_virtual_memory_bytes {process.VirtualMemorySize64}");
+            
+            sb.AppendLine("# HELP dotnet_gc_heap_size_bytes GC heap size in bytes");
+            sb.AppendLine("# TYPE dotnet_gc_heap_size_bytes gauge");
+            sb.AppendLine($"dotnet_gc_heap_size_bytes {gc.HeapSizeBytes}");
+            
+            sb.AppendLine("# HELP dotnet_gc_gen0_collections_total Gen0 GC count");
+            sb.AppendLine("# TYPE dotnet_gc_gen0_collections_total counter");
+            sb.AppendLine($"dotnet_gc_gen0_collections_total {GC.CollectionCount(0)}");
+            
+            sb.AppendLine("# HELP dotnet_gc_gen1_collections_total Gen1 GC count");
+            sb.AppendLine("# TYPE dotnet_gc_gen1_collections_total counter");
+            sb.AppendLine($"dotnet_gc_gen1_collections_total {GC.CollectionCount(1)}");
+            
+            sb.AppendLine("# HELP dotnet_gc_gen2_collections_total Gen2 GC count");
+            sb.AppendLine("# TYPE dotnet_gc_gen2_collections_total counter");
+            sb.AppendLine($"dotnet_gc_gen2_collections_total {GC.CollectionCount(2)}");
+            
+            sb.AppendLine("# HELP dotnet_thread_count_total Current thread count");
+            sb.AppendLine("# TYPE dotnet_thread_count_total gauge");
+            sb.AppendLine($"dotnet_thread_count_total {process.Threads.Count}");
+            
+            return Results.Text(sb.ToString(), "text/plain; version=0.0.4");
+        });
     }
 }
 

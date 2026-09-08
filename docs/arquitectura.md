@@ -18,6 +18,7 @@
 | Design System | shadcn/ui | — | Componentes Neón M365, accesibles, componibles |
 | Persistencia | SQLite / EF Core | — | Tokens de refresh, estado multi-tenant |
 | Secrets | Variables de entorno | — | Client secret, tenant ID — nunca en código |
+| Escalabilidad | Single-replica | — | SQLite WAL = 1 writer, N readers. Para multi-replica: Redis lock o Postgres |
 
 ---
 
@@ -146,6 +147,18 @@ App startup
 | Tenant ID | Parámetro de configuración por host |
 | Graph scopes | Delegados al mínimo necesario (principio de mínimo privilegio) |
 | Secrets en código | Prohibido — linter + CI check |
+| ENCRYPTION_KEY | Validado en startup (mín 32 chars), PBKDF2 con salt único por archivo |
+
+---
+
+## Limitaciones conocidas
+
+| Componente | Limitación | Mitigación |
+|------------|------------|------------|
+| SQLite (ControlPlane) | Single-writer (WAL mode) | Solo 1 réplica ControlPlane. Para HA: Redis distributed lock o migración a Postgres |
+| GraphServiceClient | Creación por-request | Cache por modo auth (app-only / per-user) recomendado |
+| MCP Tools | Sin logging estructurado | Agregar ILogger + structured logging (Serilog) |
+| Admin tools | Token estático (ADMIN_TOKEN) | Rotación periódica, integración con OAuth admin en futuro |
 
 ---
 

@@ -1,0 +1,289 @@
+openapi: 3.0.1
+info:
+  title: ZeroTeams MCP API
+  version: 1.0.0
+  description: Microsoft Teams MCP tools for AI agents - ControlPlane REST API
+servers:
+  - url: https://your-controlplane.example.com
+paths:
+  /api/tenants:
+    get:
+      summary: List all tenants
+      operationId: ListTenants
+      responses:
+        '200':
+          description: List of tenants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tenant'
+    post:
+      summary: Register new tenant
+      operationId: CreateTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantCreate'
+      responses:
+        '201':
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '409':
+          description: Tenant already exists
+
+  /api/tenants/{tenantId}:
+    get:
+      summary: Get tenant by ID
+      operationId: GetTenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          description: Tenant not found
+    delete:
+      summary: Delete tenant
+      operationId: DeleteTenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Tenant deleted
+        '404':
+          description: Tenant not found
+
+  /api/tenants/{tenantId}/consent:
+    get:
+      summary: Get consent status
+      operationId: GetConsent
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Consent status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consent'
+        '404':
+          description: No consent record
+    post:
+      summary: Request admin consent
+      operationId: RequestConsent
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Consent URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentUrl'
+        '404':
+          description: Tenant not found
+
+  /health:
+    get:
+      summary: Health check
+      operationId: HealthCheck
+      responses:
+        '200':
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /health/detailed:
+    get:
+      summary: Detailed health check with tenant status
+      operationId: HealthDetailed
+      responses:
+        '200':
+          description: Detailed service health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthDetailed'
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: Metrics
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /auth/login:
+    get:
+      summary: Initiate OAuth login
+      operationId: AuthLogin
+      responses:
+        '200':
+          description: OAuth URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    format: uri
+                  state:
+                    type: string
+
+  /auth/status:
+    get:
+      summary: OAuth configuration status
+      operationId: AuthStatus
+      responses:
+        '200':
+          description: OAuth status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  clientId:
+                    type: string
+                  tenantId:
+                    type: string
+
+components:
+  schemas:
+    Tenant:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        clientId:
+          type: string
+        displayName:
+          type: string
+        createdAt:
+            type: string
+            format: date-time
+        consentStatus:
+          type: string
+          enum: [Pending, Granted, Revoked, Failed]
+    TenantCreate:
+      type: object
+      required: [tenantId, clientId, clientSecret, displayName]
+      properties:
+        tenantId:
+          type: string
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        displayName:
+          type: string
+    Consent:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        status:
+          type: string
+          enum: [Pending, Granted, Revoked, Failed]
+        requestedAt:
+          type: string
+          format: date-time
+        grantedAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+        errorMessage:
+          type: string
+    ConsentUrl:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        status:
+          type: string
+        consentUrl:
+          type: string
+          format: uri
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        tenants:
+          type: object
+          properties:
+            total:
+              type: integer
+            consented:
+              type: integer
+            pending:
+              type: integer
+    HealthDetailed:
+      type: object
+      properties:
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        tenants:
+          type: array
+          items:
+            type: object
+            properties:
+              tenantId:
+                type: string
+              displayName:
+                type: string
+              consentStatus:
+                type: string
+              grantedAt:
+                type: string
+                format: date-time
+              revokedAt:
+                type: string
+                format: date-time
+              errorMessage:
+                type: string
+security:
+  - oauth2: []

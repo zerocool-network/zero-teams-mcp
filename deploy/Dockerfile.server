@@ -7,5 +7,13 @@ RUN dotnet publish src/ZeroTeamsMcp.Server/ZeroTeamsMcp.Server.csproj -c Release
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
+
+# Security: non-root user
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+USER appuser
+
 COPY --from=build /app/publish .
+EXPOSE 5200
+
+# Security headers via middleware (configured in Program.cs)
 ENTRYPOINT ["dotnet", "ZeroTeamsMcp.Server.dll"]

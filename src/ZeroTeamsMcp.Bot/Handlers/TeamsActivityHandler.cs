@@ -84,7 +84,7 @@ public sealed class TeamsActivityHandler : ActivityHandler
 
     private async Task<object> HandleListChatsAsync(CancellationToken ct)
     {
-        var client = await _graph.GetClientAsync(ct);
+        var client = await _graph.GetClientAsync(ct: ct);
         var result = await client.Chats.GetAsync(cfg => cfg.QueryParameters.Top = 20, ct);
 
         var chats = result?.Value?.Select(c => (object)new Dictionary<string, object>
@@ -99,7 +99,7 @@ public sealed class TeamsActivityHandler : ActivityHandler
 
     private async Task<object> HandleListTeamsAsync(CancellationToken ct)
     {
-        var client = await _graph.GetClientAsync(ct);
+        var client = await _graph.GetClientAsync(ct: ct);
         var result = await client.Teams.GetAsync(cfg => cfg.QueryParameters.Top = 20, ct);
 
         var teams = result?.Value?.Select(t => (object)new Dictionary<string, object>
@@ -116,7 +116,7 @@ public sealed class TeamsActivityHandler : ActivityHandler
         if (string.IsNullOrEmpty(chatId))
             return CardTemplates.CreateErrorCard("Falta chatId.");
 
-        var client = await _graph.GetClientAsync(ct);
+        var client = await _graph.GetClientAsync(ct: ct);
         var result = await client.Chats[chatId].Messages.GetAsync(cfg => cfg.QueryParameters.Top = 20, ct);
 
         var messages = result?.Value?.Select(m => (object)new Dictionary<string, object>
@@ -135,7 +135,7 @@ public sealed class TeamsActivityHandler : ActivityHandler
         if (string.IsNullOrEmpty(teamId))
             return CardTemplates.CreateErrorCard("Falta teamId.");
 
-        var client = await _graph.GetClientAsync(ct);
+        var client = await _graph.GetClientAsync(ct: ct);
         var result = await client.Teams[teamId].Channels.GetAsync(cfg => cfg.QueryParameters.Top = 20, ct);
 
         var channels = result?.Value?.Select(ch => (object)new Dictionary<string, object>

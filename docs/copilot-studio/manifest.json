@@ -1,0 +1,76 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "{{BOT_APP_ID}}",
+  "packageName": "com.zerocoolnetwork.zeroteams",
+  "developer": {
+    "name": "ZeroCool Network",
+    "websiteUrl": "https://github.com/zerocool-network/zero-teams-mcp",
+    "privacyUrl": "https://github.com/zerocool-network/zero-teams-mcp/blob/main/PRIVACY.md",
+    "termsOfUseUrl": "https://github.com/zerocool-network/zero-teams-mcp/blob/main/TERMS.md"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "name": {
+    "short": "ZeroTeams MCP",
+    "full": "ZeroTeams MCP - Microsoft Teams for AI Agents"
+  },
+  "description": {
+    "short": "MCP server exposing Microsoft Teams as tools for AI agents",
+    "full": "ZeroTeams MCP exposes 27 Microsoft Teams tools (chats, channels, messages, meetings, calendar, admin) as Model Context Protocol tools. Compatible with Copilot Studio, Claude Desktop, Cursor, and custom MCP agents."
+  },
+  "accentColor": "#00E5FF",
+  "bots": [
+    {
+      "botId": "{{BOT_APP_ID}}",
+      "scopes": [
+        "personal",
+        "team",
+        "groupChat"
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": [
+            "personal",
+            "team",
+            "groupChat"
+          ],
+          "commands": [
+            {
+              "title": "help",
+              "description": "Muestra ayuda y comandos disponibles"
+            },
+            {
+              "title": "chats",
+              "description": "Lista tus chats recientes"
+            },
+            {
+              "title": "teams",
+              "description": "Lista tus equipos de Teams"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "composeExtensions": [],
+  "configurableTabs": [],
+  "staticTabs": [],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "{{CONTROLPLANE_DOMAIN}}",
+    "{{MCP_SERVER_DOMAIN}}"
+  ],
+  "webApplicationInfo": {
+    "id": "{{BOT_APP_ID}}",
+    "resource": "api://{{CONTROLPLANE_DOMAIN}}/{{BOT_APP_ID}}"
+  }
+}

@@ -319,6 +319,23 @@ Cuando un agente se conecta al servidor MCP, ejecuta `tools/list` y recibe el ca
 | **Calendar** | 4 | Calendars.ReadWrite |
 | **Admin** | 6 | Ninguno (ControlPlane REST) |
 
+### 5.3 Convención de nombres
+
+Todos los tools siguen el patrón: `<dominio>_<acción>_<recurso>`
+
+| Prefijo | Dominio | Ejemplos |
+|---------|---------|----------|
+| `teams_` | Microsoft Teams (chats, canales, mensajes, miembros) | `teams_list_teams`, `teams_send_message`, `teams_get_chat_members` |
+| `meetings_` | Reuniones online | `meetings_list`, `meetings_create`, `meetings_get_attendance` |
+| `calendar_` | Calendario/Eventos | `calendar_list_events`, `calendar_create_event` |
+| `admin_` | Administración de tenants (ControlPlane) | `admin_list_tenants`, `admin_create_tenant`, `admin_health` |
+
+**Reglas:**
+- Dominio en singular: `team`, `chat`, `channel`, `meeting`, `event`
+- Acción: `list`, `get`, `create`, `send`, `delete`, `add`, `remove`
+- Recurso en plural: `teams`, `chats`, `channels`, `messages`, `members`, `events`
+- Separador: `_` (underscore) — NO usar `.` (punto) ni `-` (guión)
+
 ### 5.3 Ejemplo de invocación desde agente
 
 ```

@@ -14,6 +14,8 @@ TestResults/
 node_modules/
 .next/
 out/
+test-results/
+playwright-report/
 
 ## Docker
 .env
@@ -30,3 +32,9 @@ Thumbs.db
 
 ## Secrets
 appsettings.Development.json
+
+## Docs internos (no público)
+docs/credenciales.md
+docs/MEJORAS_POST_FORENSIC.md
+docs/MEETING_TOOLS_SETUP.md
+docs/copilot-studio/SETUP.md

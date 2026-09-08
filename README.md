@@ -1,12 +1,12 @@
-# zero-teams-mcp
+# Teams for AI Agents
 
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-purple)](https://dotnet.microsoft.com)
 [![MCP SDK 2.2](https://img.shields.io/badge/MCP-2.2.0-blue)](https://github.com/modelcontextprotocol/csharp-sdk)
 [![Graph SDK 6.5](https://img.shields.io/badge/Graph-6.5.0-green)](https://learn.microsoft.com/en-us/graph/sdks/sdk-installation)
 [![Bot Builder 4.23](https://img.shields.io/badge/Bot.Builder-4.23.1-orange)](https://github.com/microsoft/botbuilder-dotnet)
-[![CI](https://img.shields.io/github/actions/workflow/status/zerocool/zero-teams-mcp/ci.yml?label=CI)](.github/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/zerocool-network/zero-teams-mcp/ci.yml?label=CI)](.github/workflows/ci.yml)
 
-Servidor MCP para Microsoft Teams con .NET 10 y Microsoft Graph API. Multi-tenant, app-only, stdio + HTTP dual transport. **25 MCP tools** (13 Teams + 5 Meetings + 4 Calendar + 6 Admin).
+**Microsoft Teams for AI Agents** — Servidor MCP para Microsoft Teams con .NET 10 y Microsoft Graph API. Multi-tenant, app-only, stdio + HTTP dual transport.
 
 ---
 
@@ -25,7 +25,7 @@ Servidor MCP para Microsoft Teams con .NET 10 y Microsoft Graph API. Multi-tenan
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    zero-teams-mcp                       │
+│                  Teams for AI Agents                     │
 ├─────────────┬─────────────┬─────────────┬───────────────┤
 │    Core     │   Server    │     Bot     │ ControlPlane  │
 │  (Graph,    │  (MCP stdio │  (Adaptive  │  (REST API,   │
@@ -43,6 +43,8 @@ Servidor MCP para Microsoft Teams con .NET 10 y Microsoft Graph API. Multi-tenan
   │   API   │
   └─────────┘
 ```
+
+---
 
 ## Quick Start
 
@@ -65,7 +67,7 @@ Te guía paso a paso: crea la app en Azure AD, copia credenciales, configura per
 #### 2. Configurar Azure AD
 
 1. Crear **App Registration** en [Entra Portal](https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) →「New registration」
-2. Name: `ZeroTeams MCP`
+2. Name: `Teams for AI Agents`
 3. Account type: **Accounts in this organizational directory only**
 4. Redirect URI: dejar vacío (usamos client credentials, no browser)
 5. Guardar: `TenantId`, `ClientId`, `ClientSecret`
@@ -101,7 +103,7 @@ AZURE_CLIENT_ID=xxx
 AZURE_CLIENT_SECRET=xxx
 ```
 
-### 4. Ejecutar
+### 5. Ejecutar
 
 **Docker Compose (todo junto):**
 
@@ -135,46 +137,16 @@ dotnet run --project src/ZeroTeamsMcp.ControlPlane
 cd apps/panel && pnpm install && pnpm dev
 ```
 
-**CLI:**
-
-```bash
-dotnet run --project src/ZeroTeamsMcp.Cli -- tenant-add
-dotnet run --project src/ZeroTeamsMcp.Cli -- tenant-list
-```
-
-```bash
-dotnet run --project src/ZeroTeamsMcp.Cli -- tenant-add \
-  --tenant-id "TU-TENANT-ID" \
-  --client-id "TU-CLIENT-ID" \
-  --client-secret "TU-SECRET"
-```
-
-### 5. Docker Compose
-
-```bash
-# Crear .env con credenciales
-cat > deploy/.env << EOF
-AZURE_TENANT_ID=xxx
-AZURE_CLIENT_ID=yyy
-AZURE_CLIENT_SECRET=zzz
-EOF
-
-# Levantar todo
-docker compose -f deploy/docker-compose.yml up -d
-```
-
-Servicios: ControlPlane (`:5100`), Panel (`:3000`), MCP Server (`:5200`)
-
 ---
 
-## MCP Tools — 25 herramientas
+## MCP Tools — 19 herramientas activas
 
 ### Teams (13 tools)
 
 | Tool | Descripción | Graph API | Tipo |
 |------|-------------|-----------|------|
 | `teams_list_teams` | Lista todos los equipos | `GET /me/joinedTeams` | Lectura |
-| `teams_list_chats` | Lista chats 1:1 y grupales | `GET /me/chats` | Lectura |
+| `teams_list_chats` | Lista chats 1:1 y grupales | `GET /users/{id}/chats` | Lectura |
 | `teams_create_chat` | Crea chat 1:1 o grupal | `POST /chats` | Escritura |
 | `teams_send_message` | Envía mensaje a un chat | `POST /chats/{id}/messages` | Escritura |
 | `teams_get_chat_messages` | Obtiene mensajes de un chat | `GET /chats/{id}/messages` | Lectura |
@@ -187,25 +159,6 @@ Servicios: ControlPlane (`:5100`), Panel (`:3000`), MCP Server (`:5200`)
 | `teams_get_channel_members` | Miembros de un canal | `GET /teams/{id}/channels/{id}/members` | Lectura |
 | `teams_get_team_channels` | Alias de `teams_list_channels` | `GET /teams/{id}/channels` | Lectura |
 
-### Meetings (5 tools)
-
-| Tool | Descripción | Graph API | Tipo |
-|------|-------------|-----------|------|
-| `teams_list_meetings` | Lista reuniones online | `GET /me/onlineMeetings` | Lectura |
-| `teams_get_meeting` | Detalle de una reunión | `GET /me/onlineMeetings/{id}` | Lectura |
-| `teams_create_meeting` | Crea reunión online | `POST /me/onlineMeetings` | Escritura |
-| `teams_delete_meeting` | Elimina reunión | `DELETE /me/onlineMeetings/{id}` | Escritura |
-| `teams_get_meeting_attendance` | Reporte de asistencia | `GET /me/onlineMeetings/{id}/attendanceReports` | Lectura |
-
-### Calendar (4 tools)
-
-| Tool | Descripción | Graph API | Tipo |
-|------|-------------|-----------|------|
-| `teams_list_calendar_events` | Lista eventos del calendario | `GET /me/calendarView` | Lectura |
-| `teams_get_calendar_event` | Detalle de un evento | `GET /me/events/{id}` | Lectura |
-| `teams_create_calendar_event` | Crea evento (con opción online meeting) | `POST /me/events` | Escritura |
-| `teams_delete_calendar_event` | Elimina evento | `DELETE /me/events/{id}` | Escritura |
-
 ### Admin (6 tools)
 
 | Tool | Descripción | Endpoint |
@@ -216,6 +169,35 @@ Servicios: ControlPlane (`:5100`), Panel (`:3000`), MCP Server (`:5200`)
 | `admin_delete_tenant` | Elimina tenant | `DELETE /api/tenants/{id}` |
 | `admin_get_consent` | Estado de consentimiento | `GET /api/tenants/{id}/consent` |
 | `admin_health` | Health check del ControlPlane | `GET /health` |
+
+> **Nota:** Meetings y Calendar tools están disponibles pero desactivados (requieren Exchange Online Application Access Policy).
+
+---
+
+## Testing Tools
+
+### CLI — `zero-teams test`
+
+```bash
+# Listar herramientas disponibles
+zero-teams tools
+
+# Probar una herramienta
+zero-teams test teams_list_teams
+
+# Con argumentos JSON
+zero-teams test teams_list_channels --args '{"teamId":"<id>"}'
+
+# Respuesta JSON crudo
+zero-teams test teams_list_teams --json
+
+# Tabla formateada (auto-detect para arrays)
+zero-teams test teams_list_teams --table
+```
+
+### Panel — Playground
+
+Accede al Playground en `http://localhost:3000/playground` para probar herramientas interactivamente con selector de tools, editor de argumentos JSON y vista de resultados en tabla o JSON crudo.
 
 ---
 
@@ -239,7 +221,7 @@ Agregar en `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-Para HTTP transport (remoto o同一 red):
+Para HTTP transport (remoto o misma red):
 
 ```json
 {
@@ -275,6 +257,7 @@ Swagger UI disponible en `http://localhost:5100/swagger`.
 - **Tenants** (`/tenants`) — CRUD con consent status badges
 - **Consents** (`/consents`) — Lista de consentimientos por tenant
 - **Health** (`/health`) — Estado de servicios
+- **Playground** (`/playground`) — Testing interactivo de MCP tools
 
 Design: Neón M365 (dark, glassmorphism, cyan/magenta neon accents).
 
@@ -297,6 +280,12 @@ zero-teams health
 
 # Eliminar tenant
 zero-teams tenant-delete --tenant-id <ID>
+
+# Listar herramientas MCP
+zero-teams tools
+
+# Probar una herramienta
+zero-teams test <tool-name> [--args '{}'] [--json] [--table]
 ```
 
 ---
@@ -313,9 +302,9 @@ zero-teams tenant-delete --tenant-id <ID>
 | `Chat.Read.All` | Application | `teams_list_chats` |
 | `Chat.ReadWrite.All` | Application | `teams_create_chat`, `teams_add_chat_member`, `teams_remove_chat_member` |
 | `ChatMessage.Send` | Application | `teams_send_message` |
-| `OnlineMeetings.ReadWrite` | Application | `teams_list_meetings`, `teams_get_meeting`, `teams_create_meeting`, `teams_delete_meeting` |
-| `OnlineMeetingAttendance.Read` | Application | `teams_get_meeting_attendance` |
-| `Calendars.ReadWrite` | Application | `teams_list_calendar_events`, `teams_get_calendar_event`, `teams_create_calendar_event`, `teams_delete_calendar_event` |
+| `OnlineMeetings.ReadWrite` | Application | Meetings (desactivado) |
+| `OnlineMeetingAttendance.Read` | Application | Meetings (desactivado) |
+| `Calendars.ReadWrite` | Application | Calendar (desactivado) |
 
 ---
 
@@ -344,6 +333,10 @@ zero-teams-mcp/
     ├── arquitectura.md
     ├── alcance-mvp.md
     ├── roadmap.md
+    ├── integracion-agentes.md      # SDD: integración con agentes IA
+    ├── skills/
+    │   └── zero-teams-integration/
+    │       └── SKILL.md            # Skill de integración
     └── adr/                        # 6 ADRs
 ```
 
@@ -373,12 +366,22 @@ dotnet build ZeroTeamsMcp.slnx -c Release && dotnet test tests/ZeroTeamsMcp.Test
 - [Alcance MVP](docs/alcance-mvp.md) — 25 tools con schema, permisos y criterios de aceptación
 - [Integración con Agentes](docs/integracion-agentes.md) — SDD: cómo conectar agentes IA (Claude Desktop, Cursor, Copilot Studio)
 - [Roadmap](docs/roadmap.md) — F0–F8 con entregables y dependencias
+- [Copilot Studio Setup](docs/copilot-studio/SETUP.md) — Guía completa de integración con Copilot Studio
 
 ### Skills
 
 | Skill | Descripción |
 |-------|-------------|
 | [zero-teams-integration](docs/skills/zero-teams-integration/SKILL.md) | Workflow de integración con agentes IA |
+
+### Copilot Studio Integration
+
+| Archivo | Descripción |
+|---------|-------------|
+| [SETUP.md](docs/copilot-studio/SETUP.md) | Guía completa: Azure AD, Bot Framework, Custom Connector |
+| [manifest.json](docs/copilot-studio/manifest.json) | Teams App Manifest template |
+| [openapi.yaml](docs/copilot-studio/openapi.yaml) | OpenAPI spec para Custom Connector |
+| [zeroteams-mcp.zip](docs/copilot-studio/zeroteams-mcp.zip) | App package listo para Teams |
 
 ### ADRs
 
@@ -405,6 +408,7 @@ dotnet build ZeroTeamsMcp.slnx -c Release && dotnet test tests/ZeroTeamsMcp.Test
 | F5 | ✅ | MCP Admin Tools (6) |
 | F6 | ✅ | Multi-transport (stdio + HTTP) |
 | F7 | ✅ | Tests (20) + CI |
+| F8 | ✅ | Meetings + Calendar (deferred) |
 
 ---
 
