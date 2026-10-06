@@ -48,6 +48,47 @@ internal static class ToolLogger
         }
     }
 
+    /// <summary>
+    /// Mismo ciclo de log/timing que <see cref="ExecuteWithLogging{T}"/>, pero devuelve el resultado
+    /// tal cual en vez de serializarlo a JSON. Lo usan las herramientas que devuelven content blocks
+    /// MCP (texto + imagen), que ya serializa el protocolo.
+    /// </summary>
+    public static async Task<T> ExecuteWithContentLogging<T>(
+        this ILogger logger,
+        string toolName,
+        string? userId,
+        Func<Task<T>> action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var requestId = Guid.NewGuid().ToString("N")[..8];
+
+        logger.LogInformation(
+            "MCP tool started: {ToolName}, requestId={RequestId}, userId={UserId}",
+            toolName, requestId, HashUserId(userId));
+
+        try
+        {
+            var result = await action();
+            stopwatch.Stop();
+
+            logger.LogInformation(
+                "MCP tool completed: {ToolName}, requestId={RequestId}, durationMs={DurationMs}, success=true",
+                toolName, requestId, stopwatch.ElapsedMilliseconds);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+
+            logger.LogError(ex,
+                "MCP tool failed: {ToolName}, requestId={RequestId}, durationMs={DurationMs}, error={Error}",
+                toolName, requestId, stopwatch.ElapsedMilliseconds, ex.Message);
+
+            throw;
+        }
+    }
+
     private static string? HashUserId(string? userId)
     {
         if (string.IsNullOrEmpty(userId))

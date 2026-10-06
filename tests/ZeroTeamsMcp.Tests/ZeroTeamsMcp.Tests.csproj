@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroTeamsMcp.Core\ZeroTeamsMcp.Core.csproj" />
     <ProjectReference Include="..\..\src\ZeroTeamsMcp.ControlPlane\ZeroTeamsMcp.ControlPlane.csproj" />
+    <ProjectReference Include="..\..\src\ZeroTeamsMcp.Server\ZeroTeamsMcp.Server.csproj" />
   </ItemGroup>
 
 </Project>
