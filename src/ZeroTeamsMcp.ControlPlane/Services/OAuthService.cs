@@ -17,11 +17,12 @@ public sealed class OAuthService
     private static readonly string[] DefaultScopes =
     [
         "openid", "profile", "email",
-        "Team.ReadBasic.All", "Channel.ReadBasic.All", "Chat.ReadBasic.All",
-        "User.ReadBasic.All", "Chat.ReadWrite.All", "ChatMessage.Send",
-        "ChannelMessage.Send", "Chat.Create", "Channel.Create",
-        "ChatMember.ReadWrite.All", "ChannelMember.Read.All",
-        "Calendars.ReadWrite"
+        "offline_access",
+        "User.Read", "User.ReadBasic.All",
+        "Team.ReadBasic.All", "Channel.ReadBasic.All",
+        "Chat.Read", "Chat.ReadBasic",
+        "ChatMessage.Send", "Chat.Create",
+        "ChannelMessage.Send"
     ];
 
     public OAuthService(HttpClient http)
@@ -50,10 +51,9 @@ public sealed class OAuthService
         return Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").TrimEnd('=');
     }
 
-    public string GetAuthorizationUrl(string codeChallenge)
+    public string GetAuthorizationUrl(string codeChallenge, string state)
     {
         var scopes = string.Join(" ", DefaultScopes);
-        var state = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
         return $"https://login.microsoftonline.com/{_tenantId}/oauth2/v2.0/authorize" +
                $"?client_id={_clientId}" +
                $"&response_type=code" +

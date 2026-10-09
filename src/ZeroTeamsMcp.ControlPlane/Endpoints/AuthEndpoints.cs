@@ -24,7 +24,7 @@ public static class AuthEndpoints
             var challenge = oauth.GenerateCodeChallenge(verifier);
             var state = Guid.NewGuid().ToString("N");
             _pendingAuth[state] = (verifier, DateTimeOffset.UtcNow.AddMinutes(10));
-            var url = oauth.GetAuthorizationUrl(challenge) + $"&state={state}";
+            var url = oauth.GetAuthorizationUrl(challenge, state);
             return Results.Ok(new { url, state });
         });
 

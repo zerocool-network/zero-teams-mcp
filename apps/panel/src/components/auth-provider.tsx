@@ -35,6 +35,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         localStorage.removeItem("zt-auth-user");
       }
+    } else {
+      fetch(`${CONTROLPLANE_URL}/auth/users`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((users: AuthUser[]) => {
+          if (users.length > 0) {
+            const u = { userId: users[0].userId, email: users[0].email };
+            setUser(u);
+            localStorage.setItem("zt-auth-user", JSON.stringify(u));
+          }
+        })
+        .catch(() => {});
     }
     setLoading(false);
   }, []);

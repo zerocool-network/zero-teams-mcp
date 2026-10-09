@@ -9,6 +9,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVER_PROJECT="$PROJECT_ROOT/src/ZeroTeamsMcp.Server"
 
+# Load project .env for vars not already provided by the MCP client (e.g. ELEVENLABS_API_KEY)
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    while IFS='=' read -r key value; do
+        [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ && -z "${!key:-}" ]] && export "$key=$value"
+    done < "$PROJECT_ROOT/.env"
+fi
+
 # Default to local development values, allow override via environment
 export AZURE_TENANT_ID="${AZURE_TENANT_ID:-}"
 export AZURE_CLIENT_ID="${AZURE_CLIENT_ID:-}"

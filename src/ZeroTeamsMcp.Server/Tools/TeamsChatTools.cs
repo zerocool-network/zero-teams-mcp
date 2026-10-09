@@ -132,24 +132,56 @@ public sealed class TeamsChatTools
     }
 
     [McpServerTool(Name = "teams_get_chat_messages")]
-    [Description("Obtiene los mensajes recientes de un chat. Requiere chatId. Retorna remitente, contenido y fecha.")]
+    [Description("Obtiene mensajes de un chat, paginando hacia atrás en el histórico si hace falta. Requiere chatId. Retorna remitente, contenido y fecha.")]
     public static async Task<string> GetChatMessages(
         GraphService graph,
         ILogger<TeamsChatTools> logger,
         [Description("ID del chat (UUID).")] string chatId,
-        [Description("Opcional. Máximo de mensajes. Default: 20.")] int top = 20,
+        [Description("Opcional. Máximo de mensajes a retornar en total. Default: 20.")] int top = 20,
+        [Description("Opcional. Fecha ISO (yyyy-MM-dd) hasta la que paginar hacia atrás. Sigue pidiendo páginas antiguas hasta llegar a esta fecha o agotar maxPages.")] string? untilDate = null,
+        [Description("Opcional. Máximo de páginas de Graph a recorrer al paginar hacia atrás. Default: 10.")] int maxPages = 10,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithLogging("teams_get_chat_messages", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
-            var result = await client.Chats[chatId].Messages.GetAsync(cfg =>
+            DateTimeOffset? until = string.IsNullOrWhiteSpace(untilDate)
+                ? null
+                : DateTimeOffset.Parse(untilDate).ToUniversalTime();
+
+            // Graph limita el page size de mensajes de chat a 50.
+            var pageSize = Math.Min(Math.Max(top, 1), 50);
+
+            var collected = new List<ChatMessage>();
+            var page = await client.Chats[chatId].Messages.GetAsync(cfg =>
             {
-                cfg.QueryParameters.Top = top;
+                cfg.QueryParameters.Top = pageSize;
             });
 
-            return result?.Value?.Select(m => new
+            var pagesFetched = 0;
+            while (page is not null)
+            {
+                pagesFetched++;
+                if (page.Value is not null)
+                {
+                    collected.AddRange(page.Value);
+                }
+
+                var oldestInPage = page.Value?.Count > 0 ? page.Value[^1].CreatedDateTime : null;
+                var reachedTarget = collected.Count >= top && until is null;
+                var reachedDate = until is not null && oldestInPage is not null && oldestInPage <= until;
+                var noMorePages = string.IsNullOrEmpty(page.OdataNextLink);
+
+                if (reachedTarget || reachedDate || noMorePages || pagesFetched >= maxPages)
+                {
+                    break;
+                }
+
+                page = await client.Chats[chatId].Messages.WithUrl(page.OdataNextLink!).GetAsync();
+            }
+
+            var projected = collected.Select(m => new
             {
                 m.Id,
                 From = m.From?.User?.DisplayName,
@@ -158,7 +190,15 @@ public sealed class TeamsChatTools
                 ContentType = m.Body?.ContentType?.ToString(),
                 m.CreatedDateTime,
                 m.ReplyToId
-            }) ?? [];
+            });
+
+            if (until is not null)
+            {
+                projected = projected.Where(m => m.CreatedDateTime is not null && m.CreatedDateTime >= until);
+                return projected.ToList();
+            }
+
+            return projected.Take(top).ToList();
         });
     }
 }
