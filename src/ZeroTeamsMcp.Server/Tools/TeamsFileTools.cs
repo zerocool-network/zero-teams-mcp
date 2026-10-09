@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using DocumentFormat.OpenXml.Packaging;
@@ -63,6 +64,11 @@ public sealed class TeamsFileTools
     private const int MaxOutputChars = 120_000;
     private const int ProcessTimeoutMs = 120_000;
 
+    // Límites del manejo de ZIP: entradas listadas, documentos con texto extraído y bytes por entrada (anti-bomba).
+    private const int MaxZipEntries = 300;
+    private const int MaxZipTextDocs = 25;
+    private const long MaxZipFileBytes = 8 * 1024 * 1024;
+
     private static readonly string[] PdfPageExts = { ".pdf" };
 
     private const string SuggestedPrompt =
@@ -84,7 +90,7 @@ public sealed class TeamsFileTools
     public sealed record PdfExtraction(List<string> Pages, bool HasExtractableText);
 
     [McpServerTool(Name = "teams_get_file_content")]
-    [Description("Descarga el fichero adjunto de un mensaje de Teams (PDF, DOCX, XLSX, PPTX, TXT/CSV) y devuelve su texto: por páginas en PDF, por hojas en XLSX, por diapositiva en PPTX, tal cual en texto plano. Si el PDF es escaneado (sin texto), degrada a una imagen por página para que tú (modelo cliente multimodal) lo leas. Devuelve un bloque de texto con metadatos y contenido; en PDF escaneado, además, bloques de imagen. Si falla o exige permisos que faltan, bloque de texto con diagnóstico JSON.")]
+    [Description("Descarga el fichero adjunto de un mensaje de Teams (PDF, DOCX, XLSX, PPTX, TXT/CSV o ZIP) y devuelve su texto: por páginas en PDF, por hojas en XLSX, por diapositiva en PPTX, tal cual en texto plano; en ZIP lista la estructura y extrae el texto de las entradas soportadas (sin escribir a disco). Si el PDF es escaneado (sin texto), degrada a una imagen por página para que tú (modelo cliente multimodal) lo leas. Devuelve un bloque de texto con metadatos y contenido; en PDF escaneado, además, bloques de imagen. Si falla o exige permisos que faltan, bloque de texto con diagnóstico JSON.")]
     public static async Task<IList<ContentBlock>> GetFileContent(
         GraphService graph,
         ILogger<TeamsFileTools> logger,
@@ -283,11 +289,12 @@ public sealed class TeamsFileTools
             else if (ext == ".docx") body.Append(ExtractDocxText(file.Bytes));
             else if (ext == ".xlsx") body.Append(ExtractXlsxText(file.Bytes));
             else if (ext == ".pptx") body.Append(ExtractPptxText(file.Bytes));
+            else if (ext == ".zip") body.Append(ExtractZipText(file.Bytes));
             else
             {
                 return Failure(message?.Id ?? "?",
                     $"Tipo de fichero no soportado para extraer texto: extensión '{ext}' de '{candidate.Name}'. " +
-                    "Soportados: pdf, docx, xlsx, pptx, txt, csv, md, json, log.",
+                    "Soportados: pdf, docx, xlsx, pptx, txt, csv, md, json, log y zip (se lista la estructura y se extrae el texto de las entradas soportadas).",
                     message, [candidate], attempts, null, index);
             }
         }
@@ -543,6 +550,123 @@ public static async Task<List<byte[]>> RenderPdfPagesAsync(byte[] bytes)
         return value[..end];
     }
 
+    // ── ZIP ─────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Lista las entradas de un ZIP leyéndolo en memoria (rutas, tamaños, directorios). Nunca escribe
+    /// a disco: sin riesgo de zip-slip ni de bombas en disco.
+    /// </summary>
+    public static string ZipStructureText(byte[] zipBytes, int maxEntries = MaxZipEntries)
+    {
+        using var archive = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
+
+        var props = archive.Entries;
+        if (props.Count == 0) return "ZIP vacío";
+
+        var sb = new StringBuilder();
+        long total = 0;
+        var shown = 0;
+        foreach (var entry in props)
+        {
+            if (shown >= maxEntries)
+            {
+                sb.Append($"\n… resto omitido (límite de {maxEntries:N0} entradas).");
+                break;
+            }
+            shown++;
+            total += entry.Length;
+
+            var isDir = entry.FullName.EndsWith("/", StringComparison.Ordinal);
+            sb.Append(isDir ? $"\n[DIR] {entry.FullName}" : $"\n{entry.FullName} ({entry.Length} bytes)");
+            if (!isDir && IsZipUnsupported(entry.FullName)) sb.Append(" [sin soporte → no se extrae]");
+        }
+
+        return $"ZIP con {shown} entrada(s) ({total:N0} bytes descomprimidos):{sb}";
+    }
+
+    /// <summary>
+    /// Estructura del ZIP + texto de las entradas con extensión soportada, reutilizando los extractores
+    /// por tipo (PDF/DOCX/XLSX/PPTX/texto). Estrictamente en memoria: nunca se extrae a disco. Cada
+    /// entrada solo se lee si cabe en <paramref name="maxFileBytes"/>; se despliega texto de los
+    /// primeros <paramref name="maxTextDocs"/> documentos soportados y el resto se anuncia.
+    /// </summary>
+    public static string ExtractZipText(byte[] zipBytes,
+        long maxFileBytes = MaxZipFileBytes, int maxTextDocs = MaxZipTextDocs, int maxEntries = MaxZipEntries)
+    {
+        using var archive = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
+
+        var sb = new StringBuilder();
+        sb.Append(ZipStructureText(zipBytes, maxEntries));
+
+        var textDocs = 0;
+        var skipped = 0;
+        foreach (var entry in archive.Entries)
+        {
+            if (entry.FullName.EndsWith("/", StringComparison.Ordinal)) continue;      // directorio
+            if (!DocumentExtensions.Contains(ExtensionOf(entry.FullName), StringComparer.OrdinalIgnoreCase)) continue;
+
+            if (entry.Length == 0)
+            {
+                sb.Append($"\n\n### {entry.FullName} (0 bytes)\n(vacío)");
+                continue;
+            }
+            if (entry.Length > maxFileBytes)
+            {
+                sb.Append($"\n\n### {entry.FullName} ({entry.Length:N0} bytes)\n(entrada de {entry.Length:N0} bytes supera el tope de {maxFileBytes:N0}: no se ha leído.)");
+                continue;
+            }
+            if (textDocs >= maxTextDocs)
+            {
+                skipped++;
+                continue;
+            }
+
+            textDocs++;
+            string docText;
+            try
+            {
+                var entryBytes = new byte[entry.Length];
+                using var es = entry.Open();
+                es.ReadExactly(entryBytes);
+                docText = ExtractZipEntryText(entry.FullName, entryBytes);
+            }
+            catch (Exception ex)
+            {
+                sb.Append($"\n\n### {entry.FullName}\n(error leyendo la entrada: {ex.Message})");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(docText)) docText = "(sin texto extraído)";
+            docText = TruncateUtf16(docText, MaxOutputChars / 2); // 60k por doc; el total final lo recorta BuildFileBlocksAsync
+            sb.Append($"\n\n### {entry.FullName} ({entry.Length} bytes)\n").Append(docText);
+        }
+
+        if (skipped > 0)
+            sb.Append($"\n\n… {skipped} documento(s) soportado(s) más sin extraer (límite de {maxTextDocs} docs).");
+
+        return sb.ToString();
+    }
+
+    private static string ExtractZipEntryText(string fullName, byte[] bytes)
+    {
+        return ExtensionOf(fullName) switch
+        {
+            ".pdf" => JoinPdf(ExtractPdf(bytes)),
+            ".docx" => ExtractDocxText(bytes),
+            ".xlsx" => ExtractXlsxText(bytes),
+            ".pptx" => ExtractPptxText(bytes),
+            _ => ReadPlainText(bytes) // txt, csv, md, json, log
+        };
+    }
+
+    /// <summary>Entradas del ZIP que jamás se extraerán: medios, archivos anidados, binarios varios.</summary>
+    private static bool IsZipUnsupported(string name)
+    {
+        var ext = ExtensionOf(name);
+        if (MediaExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) return true;
+        return ext is ".zip" or ".rar" or ".7z" or ".tar" or ".gz";
+    }
+
     // ── Utilidades ──────────────────────────────────────────────────────────────────────────────
 
     public static string ExtensionOf(string? name)
@@ -564,6 +688,7 @@ public static async Task<List<byte[]>> RenderPdfPagesAsync(byte[] bytes)
             case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
             case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            case ".zip": return "application/zip";
             case ".json": return "application/json";
             case ".csv": return "text/csv";
             case ".md": return "text/markdown";
