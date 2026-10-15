@@ -5,6 +5,7 @@ using ModelContextProtocol.Server;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -45,11 +46,13 @@ public sealed class TeamsMemberTools
     public static async Task<string> AddChatMember(
         GraphService graph,
         ILogger<TeamsMemberTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat (UUID).")] string chatId,
         [Description("ID del usuario a agregar (UUID).")] string userId,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        CloudAccessGuard.RequireAdmin(clientContext, "teams_add_chat_member");
         return await logger.ExecuteWithLogging("teams_add_chat_member", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
@@ -79,11 +82,13 @@ public sealed class TeamsMemberTools
     public static async Task<string> RemoveChatMember(
         GraphService graph,
         ILogger<TeamsMemberTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat (UUID).")] string chatId,
         [Description("ID del miembro a eliminar (UUID del conversation member).")] string memberId,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        CloudAccessGuard.RequireAdmin(clientContext, "teams_remove_chat_member");
         return await logger.ExecuteWithLogging("teams_remove_chat_member", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);

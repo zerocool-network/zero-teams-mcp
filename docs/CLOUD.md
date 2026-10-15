@@ -116,8 +116,30 @@ Salida `output: "standalone"`. En monorepo el resultado queda en
 Rutas: `/panel` (dashboard), `/panel/login`, `/panel/tenants`, `/panel/consents`,
 `/panel/health`, `/panel/metrics`, `/panel/playground`.
 
-## Límites / hardening pendiente
+## Modelo de autorización (hardening)
 
-- `teams_get_chat_messages` acepta cualquier `chatId` conocido. Los `chatId` son aleatorios y solo se obtienen vía `teams_list_chats` (ya scoped), así que el riesgo práctico es bajo. Si hace falta, se puede verificar pertenencia al chat por membresía Graph.
-- Los tools de escritura (`teams_send_message`, etc.) están disponibles para cualquier cliente autenticado. Si quieres restringirlos a admin, se agrega un guard en esos tools.
-- La key admin se usa también para los `admin_*` tools (vía `ADMIN_TOKEN`).
+Reglas aplicadas por `CloudAccessGuard`. Solo actúan en **modo cloud**; en
+stdio/legacy (sin identidad) no se restringe nada, para no romper el uso local
+de un solo usuario.
+
+- **Escritura = solo admin.** Requieren admin en modo cloud:
+  `teams_create_chat`, `teams_send_message`, `teams_create_channel`,
+  `teams_send_channel_message`, `teams_create_calendar_event`,
+  `teams_delete_calendar_event`, `teams_add_chat_member`, `teams_remove_chat_member`.
+- **Lectura de chat limitada a miembros.** `teams_get_chat_messages` comprueba
+  (vía `GET /chats/{id}/members`) que el cliente regular sea miembro del chat.
+  El admin no se ve afectado. Requiere permiso app-only `ChatMember.Read.All`
+  (o `Chat.Read.All`); si falta, el acceso se deniega (fail closed).
+- **Scoping por identidad.** `teams_list_chats`, `teams_list_calendar_events` y
+  `teams_get_calendar_event` fuerzan el email del cliente regular
+  (`ClientContext.ResolveTarget`); el admin puede consultar cualquier usuario.
+- **`admin_*`**: siguen autenticándose con `ADMIN_TOKEN` (parámetro del tool).
+
+### Notas / pendiente
+
+- Los tools de lectura que reciben un `chatId`/`teamId` suelto
+  (`teams_get_chat_members`, `teams_list_channels`, `teams_get_channel_members`)
+  no validan membresía: son GUID aleatorios no adivinables y solo se obtienen
+  vía llamadas ya scoped. Endurecible si hiciera falta.
+- El MCP Server sirve a un **único tenant** de Entra (el de la App Registration
+  configurada); el scoping cloud es por **usuario** dentro de ese tenant.

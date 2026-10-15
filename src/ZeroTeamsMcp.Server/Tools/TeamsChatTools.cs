@@ -57,12 +57,14 @@ public sealed class TeamsChatTools
     public static async Task<string> CreateChat(
         GraphService graph,
         ILogger<TeamsChatTools> logger,
+        ClientContext clientContext,
         [Description("Tipo de chat: 'oneOnOne' o 'group'.")] string chatType,
         [Description("IDs de usuarios separados por comas (UUIDs).")] string memberIds,
         [Description("Opcional. Topic/título del chat (solo para group).")] string? topic = null,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        CloudAccessGuard.RequireAdmin(clientContext, "teams_create_chat");
         return await logger.ExecuteWithLogging("teams_create_chat", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
@@ -106,12 +108,14 @@ public sealed class TeamsChatTools
     public static async Task<string> SendMessage(
         GraphService graph,
         ILogger<TeamsChatTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat (UUID).")] string chatId,
         [Description("Contenido del mensaje (texto plano o HTML).")] string content,
         [Description("Opcional. ID del mensaje al que responde.")] string? replyToId = null,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        CloudAccessGuard.RequireAdmin(clientContext, "teams_send_message");
         return await logger.ExecuteWithLogging("teams_send_message", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
@@ -138,10 +142,11 @@ public sealed class TeamsChatTools
     }
 
     [McpServerTool(Name = "teams_get_chat_messages")]
-    [Description("Obtiene mensajes de un chat, paginando hacia atrás en el histórico si hace falta. Requiere chatId. Retorna remitente, contenido y fecha.")]
+    [Description("Obtiene mensajes de un chat, paginando hacia atrás en el histórico si hace falta. Requiere chatId. Retorna remitente, contenido y fecha. Los clientes regulares solo pueden leer chats de los que son miembros.")]
     public static async Task<string> GetChatMessages(
         GraphService graph,
         ILogger<TeamsChatTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat (UUID).")] string chatId,
         [Description("Opcional. Máximo de mensajes a retornar en total. Default: 20.")] int top = 20,
         [Description("Opcional. Fecha ISO (yyyy-MM-dd) hasta la que paginar hacia atrás. Sigue pidiendo páginas antiguas hasta llegar a esta fecha o agotar maxPages.")] string? untilDate = null,
@@ -151,6 +156,10 @@ public sealed class TeamsChatTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithLogging("teams_get_chat_messages", authenticatedUserId, async () =>
         {
+            // Cliente regular: solo puede leer chats de los que es miembro.
+            await CloudAccessGuard.EnsureChatMemberAsync(
+                graph, clientContext, "teams_get_chat_messages", chatId, authenticatedUserId);
+
             var client = await graph.GetClientAsync(authenticatedUserId);
             DateTimeOffset? until = string.IsNullOrWhiteSpace(untilDate)
                 ? null

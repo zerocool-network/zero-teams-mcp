@@ -5,6 +5,7 @@ using ModelContextProtocol.Server;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -49,12 +50,14 @@ public sealed class TeamsChannelTools
     public static async Task<string> CreateChannel(
         GraphService graph,
         ILogger<TeamsChannelTools> logger,
+        ClientContext clientContext,
         [Description("ID del team (UUID).")] string teamId,
         [Description("Nombre del canal.")] string displayName,
         [Description("Opcional. Descripción del canal.")] string? description = null,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        CloudAccessGuard.RequireAdmin(clientContext, "teams_create_channel");
         return await logger.ExecuteWithLogging("teams_create_channel", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
@@ -85,6 +88,7 @@ public sealed class TeamsChannelTools
     public static async Task<string> SendChannelMessage(
         GraphService graph,
         ILogger<TeamsChannelTools> logger,
+        ClientContext clientContext,
         [Description("ID del team (UUID).")] string teamId,
         [Description("ID del canal (UUID).")] string channelId,
         [Description("Contenido del mensaje (texto plano o HTML).")] string content,
@@ -92,6 +96,7 @@ public sealed class TeamsChannelTools
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        CloudAccessGuard.RequireAdmin(clientContext, "teams_send_channel_message");
         return await logger.ExecuteWithLogging("teams_send_channel_message", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);

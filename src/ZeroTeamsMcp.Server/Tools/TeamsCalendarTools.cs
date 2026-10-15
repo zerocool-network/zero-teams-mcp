@@ -5,6 +5,7 @@ using ModelContextProtocol.Server;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -18,24 +19,26 @@ public sealed class TeamsCalendarTools
     };
 
     [McpServerTool(Name = "teams_list_calendar_events")]
-    [Description("Lista eventos del calendario de un usuario. Requiere userId. Opcional: startDateTime, endDateTime, top.")]
+    [Description("Lista eventos del calendario de un usuario. Requiere userId. Opcional: startDateTime, endDateTime, top. Los clientes regulares solo pueden consultar su propio calendario.")]
     public static async Task<string> ListCalendarEvents(
         GraphService graph,
         ILogger<TeamsCalendarTools> logger,
-        [Description("Email o ID del usuario (UUID). Requerido.")] string userId,
+        ClientContext clientContext,
+        [Description("Email o ID del usuario (UUID). Requerido. Los clientes regulares se fuerzan a su propio email.")] string userId,
         [Description("Opcional. Fecha inicio (ISO 8601). Default: hoy.")] string? startDateTime = null,
         [Description("Opcional. Fecha fin (ISO 8601). Default: 7 días.")] string? endDateTime = null,
         [Description("Opcional. Máximo de eventos. Default: 20.")] int top = 20,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        var targetUserId = clientContext.ResolveTarget(userId) ?? userId;
         return await logger.ExecuteWithLogging("teams_list_calendar_events", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
             var start = startDateTime ?? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             var end = endDateTime ?? DateTime.UtcNow.AddDays(7).ToString("yyyy-MM-ddTHH:mm:ssZ");
 
-            var result = await client.Users[userId].CalendarView.GetAsync(cfg =>
+            var result = await client.Users[targetUserId].CalendarView.GetAsync(cfg =>
             {
                 cfg.QueryParameters.Top = top;
                 cfg.QueryParameters.StartDateTime = start;
@@ -64,15 +67,17 @@ public sealed class TeamsCalendarTools
     public static async Task<string> GetCalendarEvent(
         GraphService graph,
         ILogger<TeamsCalendarTools> logger,
+        ClientContext clientContext,
         [Description("Email o ID del usuario (UUID).")] string userId,
         [Description("ID del evento (UUID).")] string eventId,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        var targetUserId = clientContext.ResolveTarget(userId) ?? userId;
         return await logger.ExecuteWithLogging("teams_get_calendar_event", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
-            var e = await client.Users[userId].Events[eventId].GetAsync();
+            var e = await client.Users[targetUserId].Events[eventId].GetAsync();
 
             return new
             {
@@ -98,6 +103,7 @@ public sealed class TeamsCalendarTools
     public static async Task<string> CreateCalendarEvent(
         GraphService graph,
         ILogger<TeamsCalendarTools> logger,
+        ClientContext clientContext,
         [Description("Email o ID del usuario (UUID).")] string userId,
         [Description("Título del evento.")] string subject,
         [Description("Fecha/hora inicio (ISO 8601).")] string startDateTime,
@@ -108,6 +114,7 @@ public sealed class TeamsCalendarTools
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        CloudAccessGuard.RequireAdmin(clientContext, "teams_create_calendar_event");
         return await logger.ExecuteWithLogging("teams_create_calendar_event", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
@@ -166,11 +173,13 @@ public sealed class TeamsCalendarTools
     public static async Task<string> DeleteCalendarEvent(
         GraphService graph,
         ILogger<TeamsCalendarTools> logger,
+        ClientContext clientContext,
         [Description("Email o ID del usuario (UUID).")] string userId,
         [Description("ID del evento (UUID).")] string eventId,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        CloudAccessGuard.RequireAdmin(clientContext, "teams_delete_calendar_event");
         return await logger.ExecuteWithLogging("teams_delete_calendar_event", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);

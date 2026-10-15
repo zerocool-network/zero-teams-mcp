@@ -112,16 +112,19 @@ deleteCmd.SetHandler(async (tenantId, baseUrl) =>
 }, tenantIdOpt, baseUrlOpt);
 
 // --- register command (cloud) ---
-var registerEmailOpt = new Option<string?>("--email", "Email del usuario Teams (obligatorio salvo --admin-token)");
-var registerAdminTokenOpt = new Option<string?>("--admin-token", "ADMIN_TOKEN del ControlPlane. Si se pasa, registra un cliente admin (wildcard *).");
+// El registro exige siempre ADMIN_TOKEN (por defecto lo lee de la env ADMIN_TOKEN):
+// con registro abierto cualquiera podía registrarse como cualquier email y leer sus chats.
+var registerEmailOpt = new Option<string?>("--email", "Email del usuario Teams (obligatorio salvo --admin)");
+var registerAdminTokenOpt = new Option<string?>("--admin-token", () => Environment.GetEnvironmentVariable("ADMIN_TOKEN"), "ADMIN_TOKEN del ControlPlane (por defecto: env ADMIN_TOKEN)");
+var registerAdminOpt = new Option<bool>("--admin", () => false, "Registrar como cliente admin (wildcard *). Ignora --email.");
 var registerCmd = new Command("register", "Registrar un cliente remoto en el cloud y obtener su API key")
 {
-    registerEmailOpt, registerAdminTokenOpt, baseUrlOpt
+    registerEmailOpt, registerAdminTokenOpt, registerAdminOpt, baseUrlOpt
 };
-registerCmd.SetHandler(async (email, adminToken, baseUrl) =>
+registerCmd.SetHandler(async (email, adminToken, admin, baseUrl) =>
 {
     using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
-    var resp = await http.PostAsJsonAsync("/api/clients/register", new { Email = email, AdminToken = adminToken });
+    var resp = await http.PostAsJsonAsync("/api/clients/register", new { Email = email, AdminToken = adminToken, Admin = admin });
     if (!resp.IsSuccessStatusCode)
     {
         var err = await resp.Content.ReadAsStringAsync();
@@ -151,7 +154,7 @@ registerCmd.SetHandler(async (email, adminToken, baseUrl) =>
         }
     };
     Console.WriteLine(JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true }));
-}, registerEmailOpt, registerAdminTokenOpt, baseUrlOpt);
+}, registerEmailOpt, registerAdminTokenOpt, registerAdminOpt, baseUrlOpt);
 
 // --- test command ---
 var mcpUrlOpt = new Option<string>("--mcp-url", () => "http://localhost:5200", "MCP Server URL");

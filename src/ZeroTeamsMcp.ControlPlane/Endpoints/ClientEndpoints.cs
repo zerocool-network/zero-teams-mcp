@@ -22,20 +22,20 @@ public static class ClientEndpoints
     {
         var group = routes.MapGroup("/api/clients");
 
-        // Registro de cliente remoto. Opcional adminToken para crear un cliente admin (*).
+        // Registro de clientes. Requiere siempre ADMIN_TOKEN: con el registro
+        // abierto cualquiera podría registrarse como cualquier email y leer sus
+        // chats (el scoping por identidad no lo evita, se restringe al propio email).
         group.MapPost("/register", async (HttpContext http, ClientStore store) =>
         {
             var body = await http.Request.ReadFromJsonAsync<RegisterRequest>();
             if (body is null)
                 return Results.BadRequest(new { error = "Invalid body" });
 
-            var isAdmin = !string.IsNullOrEmpty(body.AdminToken);
-            if (isAdmin)
-            {
-                if (!IsValidAdminToken(body.AdminToken))
-                    return Results.Unauthorized();
-            }
-            else
+            if (!IsValidAdminToken(body.AdminToken))
+                return Results.Unauthorized();
+
+            var isAdmin = body.Admin == true;
+            if (!isAdmin)
             {
                 if (string.IsNullOrWhiteSpace(body.Email) || !EmailRegex.IsMatch(body.Email.Trim()))
                     return Results.BadRequest(new { error = "email required and must be valid" });
@@ -102,5 +102,6 @@ public static class ClientEndpoints
     {
         public string? Email { get; init; }
         public string? AdminToken { get; init; }
+        public bool? Admin { get; init; }
     }
 }
