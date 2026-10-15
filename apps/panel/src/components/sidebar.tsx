@@ -4,20 +4,36 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth-provider";
-import { LayoutDashboard, Server, Shield, Activity, Terminal, LogIn, LogOut, User, BarChart2 } from "lucide-react";
+import {
+  LayoutDashboard,
+  Server,
+  Shield,
+  Activity,
+  Terminal,
+  LogIn,
+  LogOut,
+  User,
+  BarChart2,
+  KeyRound,
+} from "lucide-react";
 
-const nav = [
+const ADMIN_NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/metrics", label: "Metrics", icon: BarChart2 },
   { href: "/tenants", label: "Tenants", icon: Server },
   { href: "/consents", label: "Consents", icon: Shield },
-  { href: "/health", label: "Health", icon: Activity },
+];
+
+const USER_NAV = [
+  { href: "/connection", label: "Mi conexión", icon: KeyRound },
   { href: "/playground", label: "Playground", icon: Terminal },
+  { href: "/health", label: "Health", icon: Activity },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
+  const nav = isAdmin ? [USER_NAV[0], ...ADMIN_NAV, ...USER_NAV.slice(1)] : USER_NAV;
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-border/50 bg-card/50 backdrop-blur-xl">
@@ -59,7 +75,9 @@ export function Sidebar() {
               <User className="h-3 w-3 text-neon-cyan" />
               <p className="text-xs font-medium text-foreground truncate">{user.email}</p>
             </div>
-            <p className="text-[10px] text-muted-foreground font-mono mb-2 truncate">{user.userId}</p>
+            <p className="text-[10px] text-muted-foreground font-mono mb-2 truncate">
+              {isAdmin ? "admin" : user.userId}
+            </p>
             <button
               onClick={logout}
               className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
@@ -74,7 +92,7 @@ export function Sidebar() {
             className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
             <LogIn className="h-3 w-3" />
-            Login for delegated auth
+            Iniciar sesión
           </Link>
         )}
         <div className="rounded-lg border border-border/50 bg-muted/30 p-3">

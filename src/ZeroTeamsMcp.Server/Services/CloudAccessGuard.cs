@@ -1,4 +1,5 @@
 using Microsoft.Graph.Models;
+using ModelContextProtocol;
 using ZeroTeamsMcp.Core.Graph;
 
 namespace ZeroTeamsMcp.Server.Services;
@@ -21,7 +22,7 @@ public static class CloudAccessGuard
 
         if (ctx.IsCloud && !ctx.IsAdmin)
         {
-            throw new UnauthorizedAccessException(
+            throw new McpException(
                 $"El tool '{tool}' requiere permisos de administrador. " +
                 "Los clientes regulares tienen acceso de solo lectura.");
         }
@@ -46,7 +47,7 @@ public static class CloudAccessGuard
 
         if (string.IsNullOrWhiteSpace(clientEmail))
         {
-            throw new UnauthorizedAccessException(
+            throw new McpException(
                 $"El tool '{tool}' requiere una identidad de cliente válida.");
         }
 
@@ -56,7 +57,7 @@ public static class CloudAccessGuard
 
         if (!isMember)
         {
-            throw new UnauthorizedAccessException(
+            throw new McpException(
                 $"Acceso denegado: el cliente no es miembro del chat '{chatId}'.");
         }
     }

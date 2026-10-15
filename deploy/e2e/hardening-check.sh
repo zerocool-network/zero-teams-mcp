@@ -26,7 +26,7 @@ bad() { echo "  FAIL: $1"; echo "        salida: ${2:-<vacío>}"; FAIL=$((FAIL +
 
 # initialize + notifications/initialized + tools/call. Devuelve el payload JSON.
 _mcp_once() { # $1=apikey $2=tool $3=args-json
-  local key="$1" tool="$2" args="$3" hdrs sid body raw
+  local key="$1" tool="$2" args="$3" hdrs sid body raw extra=""
   hdrs=$(mktemp)
   curl -sS -D "$hdrs" -o /dev/null --max-time 20 -X POST "$MCP_URL/mcp" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
@@ -34,16 +34,28 @@ _mcp_once() { # $1=apikey $2=tool $3=args-json
     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"1.0"}}}'
   sid=$(grep -i '^mcp-session-id:' "$hdrs" | tr -d '\r' | awk '{print $2}')
   rm -f "$hdrs"
-  [ -z "$sid" ] && return 0
-  curl -sS -o /dev/null --max-time 20 -X POST "$MCP_URL/mcp" \
-    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-    -H "X-Api-Key: $key" -H "Mcp-Session-Id: $sid" \
-    -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+  # SDK 2.2+ usa SessionMode=Stateless por defecto: initialize no devuelve
+  # MCP-Session-Id y el servidor no guarda estado entre peticiones. En ese caso
+  # se sigue sin sesión (antes el script abortaba y los tests salían vacíos).
+  if [ -n "$sid" ]; then
+    extra="Mcp-Session-Id: $sid"
+    curl -sS -o /dev/null --max-time 20 -X POST "$MCP_URL/mcp" \
+      -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+      -H "X-Api-Key: $key" -H "Mcp-Session-Id: $sid" \
+      -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+  fi
   body=$(mktemp)
-  curl -sS --max-time 30 -o "$body" -X POST "$MCP_URL/mcp" \
-    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-    -H "X-Api-Key: $key" -H "Mcp-Session-Id: $sid" \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":$args}}"
+  if [ -n "$extra" ]; then
+    curl -sS --max-time 30 -o "$body" -X POST "$MCP_URL/mcp" \
+      -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+      -H "X-Api-Key: $key" -H "$extra" \
+      -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":$args}}"
+  else
+    curl -sS --max-time 30 -o "$body" -X POST "$MCP_URL/mcp" \
+      -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+      -H "X-Api-Key: $key" \
+      -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":$args}}"
+  fi
   raw=$(cat "$body")
   rm -f "$body"
   # El server emite el frame SSE en una sola línea con \n literales: interpretar.

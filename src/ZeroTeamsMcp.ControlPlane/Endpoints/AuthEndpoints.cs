@@ -14,6 +14,15 @@ public static class AuthEndpoints
 
     private static readonly Dictionary<string, (string Verifier, DateTimeOffset Expiry)> _pendingAuth = new();
 
+    /// <summary>Sesión válida y admin, o dueño del propio userId.</summary>
+    private static bool CanAccessUser(HttpContext http, string userId)
+    {
+        var s = SessionService.ReadSession(http);
+        if (s is null) return false;
+        return SessionService.IsAdminEmail(s.Email)
+            || string.Equals(s.UserId, userId, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static void MapAuthEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/auth");
@@ -50,6 +59,15 @@ public static class AuthEndpoints
 
             store.SaveToken(token);
 
+            // Cookie de sesión del panel (además del postMessage al popup).
+            var sessions = http.RequestServices.GetRequiredService<SessionService>();
+            sessions.WriteCookie(http, sessions.Create(token.UserId, token.Email));
+
+            // Seguridad: email/userId van serializados como JSON (no interpolados)
+            // y se relaja CSP solo en esta página porque su script es inline.
+            var jsUserId = JsonSerializer.Serialize(token.UserId);
+            var jsEmail = JsonSerializer.Serialize(token.Email);
+            var htmlEmail = System.Net.WebUtility.HtmlEncode(token.Email);
             var html = """
                 <!DOCTYPE html>
                 <html>
@@ -57,11 +75,11 @@ public static class AuthEndpoints
                 <body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0a0a0a;color:#e0e0e0;">
                 <div style="text-align:center;">
                     <h1 style="color:#00e5ff;">✓ Authenticated</h1>
-                    <p>User: {email}</p>
+                    <p>User: {emailHtml}</p>
                     <p style="color:#888;">You can close this window.</p>
                     <script>
                         if (window.opener) {{
-                            window.opener.postMessage({{ type: 'auth-success', userId: '{userId}', email: '{email}' }}, '*');
+                            window.opener.postMessage({{ type: 'auth-success', userId: {userId}, email: {emailJs} }}, '*');
                             window.close();
                         }}
                     </script>
@@ -69,14 +87,18 @@ public static class AuthEndpoints
                 </body>
                 </html>
                 """;
-            html = html.Replace("{email}", token.Email).Replace("{userId}", token.UserId);
+            html = html.Replace("{emailHtml}", htmlEmail)
+                .Replace("{userId}", jsUserId)
+                .Replace("{emailJs}", jsEmail);
+            http.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'unsafe-inline';";
             http.Response.ContentType = "text/html";
             await http.Response.WriteAsync(html);
             return Results.Empty;
         });
 
-        group.MapGet("/token/{userId}", async (string userId, TokenStore store) =>
+        group.MapGet("/token/{userId}", async (string userId, HttpContext http, TokenStore store) =>
         {
+            if (!CanAccessUser(http, userId)) return Results.Unauthorized();
             var token = await store.GetTokenAsync(userId);
             if (token is null) return Results.NotFound(new { error = "No token for user" });
             return Results.Ok(new
@@ -90,8 +112,9 @@ public static class AuthEndpoints
             });
         });
 
-        group.MapPost("/refresh/{userId}", async (string userId, TokenStore store) =>
+        group.MapPost("/refresh/{userId}", async (string userId, HttpContext http, TokenStore store) =>
         {
+            if (!CanAccessUser(http, userId)) return Results.Unauthorized();
             var token = await store.GetTokenAsync(userId);
             if (token is null) return Results.NotFound(new { error = "No token for user" });
             return Results.Ok(new
@@ -103,16 +126,18 @@ public static class AuthEndpoints
             });
         });
 
-        group.MapDelete("/revoke/{userId}", (string userId, TokenStore store) =>
+        group.MapDelete("/revoke/{userId}", (string userId, HttpContext http, TokenStore store) =>
         {
+            if (!CanAccessUser(http, userId)) return Results.Unauthorized();
             var removed = store.RevokeToken(userId);
             return removed
                 ? Results.Ok(new { success = true, userId })
                 : Results.NotFound(new { error = "No token for user" });
         });
 
-        group.MapGet("/users", (TokenStore store) =>
+        group.MapGet("/users", (HttpContext http, TokenStore store) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var users = store.GetAllTokens().Select(t => new
             {
                 t.UserId,

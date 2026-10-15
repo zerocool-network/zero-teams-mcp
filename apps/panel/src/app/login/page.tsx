@@ -1,11 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LogIn, LogOut, User } from "lucide-react";
 
 export default function LoginPage() {
+  const router = useRouter();
   const { user, loading, login, logout } = useAuth();
 
   if (loading) {
@@ -23,8 +25,8 @@ export default function LoginPage() {
           <CardTitle className="font-display text-xl">Microsoft Teams Auth</CardTitle>
           <CardDescription>
             {user
-              ? "Authenticated with delegated permissions"
-              : "Login to enable write operations (send messages, create chats, etc.)"}
+              ? "Sesión iniciada. Consulta tu API key e integración en «Mi conexión»."
+              : "Accede al panel con tu cuenta de Microsoft (Teams)."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
@@ -37,6 +39,12 @@ export default function LoginPage() {
                   <p className="text-[10px] text-muted-foreground font-mono">{user.userId}</p>
                 </div>
               </div>
+              <Button
+                onClick={() => router.replace("/connection")}
+                className="gap-2 bg-neon-cyan text-black hover:bg-neon-cyan/90"
+              >
+                Ir a mi conexión
+              </Button>
               <Button
                 variant="outline"
                 onClick={logout}

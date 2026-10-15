@@ -15,6 +15,12 @@ public sealed class RegisteredClient
     public DateTime CreatedAt { get; init; }
     public bool Revoked { get; init; }
     public DateTime? LastUsedAt { get; init; }
+
+    /// <summary>
+    /// API key en texto plano. Solo se rellena en FindByEmailAsync (para que el
+    /// usuario pueda ver su integración en el panel); en List() queda null.
+    /// </summary>
+    public string? ApiKey { get; init; }
 }
 
 /// <summary>
@@ -28,10 +34,12 @@ public sealed class ClientStore
     private bool _initialized;
     private readonly string _dataDir;
     private readonly RedisLockService? _redisLock;
+    private readonly SecretCipher? _cipher;
 
-    public ClientStore(string? dataDir = null, RedisLockService? redisLock = null)
+    public ClientStore(string? dataDir = null, RedisLockService? redisLock = null, SecretCipher? cipher = null)
     {
         _redisLock = redisLock;
+        _cipher = cipher;
         _dataDir = dataDir ?? Path.Combine(AppContext.BaseDirectory, "data");
         Directory.CreateDirectory(_dataDir);
         var dbPath = Path.Combine(_dataDir, "controlplane.db");
@@ -66,6 +74,14 @@ public sealed class ClientStore
                 CREATE INDEX IF NOT EXISTS idx_clients_revoked ON clients(revoked);
             ";
             cmd.ExecuteNonQuery();
+
+            // Migración: copia cifrada de la key para poder mostrarla en el panel.
+            using (var alt = conn.CreateCommand())
+            {
+                alt.CommandText = "ALTER TABLE clients ADD COLUMN key_encrypted TEXT";
+                try { alt.ExecuteNonQuery(); }
+                catch (Microsoft.Data.Sqlite.SqliteException) { /* columna ya existe */ }
+            }
             _initialized = true;
         }
         finally { _initLock.Release(); }
@@ -112,15 +128,47 @@ public sealed class ClientStore
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO clients (key_hash, key_prefix, email, is_admin, revoked, created_at)
-            VALUES (@h, @p, @e, @a, 0, @c)";
+            INSERT INTO clients (key_hash, key_prefix, email, is_admin, revoked, created_at, key_encrypted)
+            VALUES (@h, @p, @e, @a, 0, @c, @k)";
         cmd.Parameters.AddWithValue("@h", hash);
         cmd.Parameters.AddWithValue("@p", prefix);
         cmd.Parameters.AddWithValue("@e", isAdmin ? "*" : email);
         cmd.Parameters.AddWithValue("@a", isAdmin ? 1 : 0);
         cmd.Parameters.AddWithValue("@c", DateTime.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("@k", (object?)_cipher?.Encrypt(key) ?? DBNull.Value);
         cmd.ExecuteNonQuery();
         return (key, prefix);
+    }
+
+    /// <summary>
+    /// Busca la key activa de un email (la más reciente). ApiKey viene descifrada
+    /// si había copia cifrada; null si la key es anterior a esta función.
+    /// </summary>
+    public async Task<RegisteredClient?> FindByEmailAsync(string email, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        EnsureInitialized();
+        using var conn = CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT key_prefix, email, is_admin, revoked, created_at, last_used_at, key_encrypted
+            FROM clients
+            WHERE email = @e AND revoked = 0
+            ORDER BY created_at DESC
+            LIMIT 1";
+        cmd.Parameters.AddWithValue("@e", email);
+        using var reader = cmd.ExecuteReader();
+        if (!await reader.ReadAsync(ct)) return null;
+        return new RegisteredClient
+        {
+            KeyPrefix = reader.GetString(0),
+            Email = reader.GetString(1),
+            IsAdmin = reader.GetInt32(2) == 1,
+            Revoked = reader.GetInt32(3) == 1,
+            CreatedAt = DateTime.Parse(reader.GetString(4)),
+            LastUsedAt = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5)),
+            ApiKey = _cipher?.Decrypt(reader.IsDBNull(6) ? null : reader.GetString(6))
+        };
     }
 
     /// <summary>

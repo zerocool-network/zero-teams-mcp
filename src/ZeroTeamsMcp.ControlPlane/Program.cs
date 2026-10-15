@@ -98,7 +98,9 @@ builder.Services.AddSingleton<OAuthService>(sp =>
 
 builder.Services.AddSingleton(sp => new TenantStore(dataDir, sp.GetService<RedisLockService>()));
 builder.Services.AddSingleton(sp => new TokenStore(dataDir, sp.GetRequiredService<OAuthService>(), sp.GetService<RedisLockService>()));
-builder.Services.AddSingleton(sp => new ClientStore(dataDir, sp.GetService<RedisLockService>()));
+builder.Services.AddSingleton(sp => new ClientStore(dataDir, sp.GetService<RedisLockService>(), sp.GetService<SecretCipher>()));
+builder.Services.AddSingleton(_ => new SecretCipher(encKey));
+builder.Services.AddSingleton<SessionService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -185,10 +187,18 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors();
 
+app.MapSessionEndpoints();
 app.MapTenantEndpoints();
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapClientEndpoints();
 app.MapMetricsEndpoints();
+
+if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ADMIN_EMAILS")))
+{
+    app.Logger.LogWarning("ADMIN_EMAILS no está definido: ninguna sesión tendrá rol admin " +
+        "(tenants, métricas y tokens de otros usuarios quedarán bloqueados). " +
+        "Defínelo con los emails Microsoft separados por comas.");
+}
 
 app.Run();

@@ -10,8 +10,9 @@ public static class TenantEndpoints
     {
         var group = routes.MapGroup("/api/tenants");
 
-        group.MapGet("/", (TenantStore store) =>
+        group.MapGet("/", (HttpContext http, TenantStore store) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var tenants = store.GetAll().Select(t => new
             {
                 t.TenantId,
@@ -23,8 +24,9 @@ public static class TenantEndpoints
             return Results.Ok(tenants);
         });
 
-        group.MapGet("/{tenantId}", (string tenantId, TenantStore store) =>
+        group.MapGet("/{tenantId}", (string tenantId, HttpContext http, TenantStore store) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var tenant = store.GetById(tenantId);
             if (tenant is null) return Results.NotFound();
             var consent = store.GetConsent(tenantId);
@@ -45,8 +47,9 @@ public static class TenantEndpoints
             });
         });
 
-        group.MapPost("/", ([FromBody] TenantConfig config, TenantStore store) =>
+        group.MapPost("/", ([FromBody] TenantConfig config, HttpContext http, TenantStore store) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var added = store.Add(config);
             if (!added) return Results.Conflict(new { error = "Tenant already exists" });
             var consentUrl = $"https://login.microsoftonline.com/{config.TenantId}/adminconsent?client_id={config.ClientId}";
@@ -58,26 +61,30 @@ public static class TenantEndpoints
             });
         });
 
-        group.MapDelete("/{tenantId}", (string tenantId, TenantStore store) =>
+        group.MapDelete("/{tenantId}", (string tenantId, HttpContext http, TenantStore store) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var removed = store.Remove(tenantId);
             return removed ? Results.NoContent() : Results.NotFound();
         });
 
         group.MapPost("/{tenantId}/consent", async (string tenantId, HttpContext http, TenantStore store) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var tenant = store.GetById(tenantId);
-            if (tenant is null) { http.Response.StatusCode = 404; return; }
+            if (tenant is null) return Results.NotFound();
             var action = await http.Request.ReadFromJsonAsync<ConsentAction>();
             var status = action?.Status ?? ConsentStatus.Pending;
             var updated = store.UpdateConsent(tenantId, status, action?.Error);
             var consentUrl = $"https://login.microsoftonline.com/{tenantId}/adminconsent?client_id={tenant.ClientId}";
-            http.Response.StatusCode = updated ? 200 : 404;
-            await http.Response.WriteAsJsonAsync(new { tenantId, Status = status.ToString(), ConsentUrl = consentUrl });
+            return updated
+                ? Results.Ok(new { tenantId, Status = status.ToString(), ConsentUrl = consentUrl })
+                : Results.NotFound();
         });
 
-        group.MapGet("/{tenantId}/consent", (string tenantId, TenantStore store) =>
+        group.MapGet("/{tenantId}/consent", (string tenantId, HttpContext http, TenantStore store) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var tenant = store.GetById(tenantId);
             if (tenant is null) return Results.NotFound();
             var consent = store.GetConsent(tenantId);
@@ -107,8 +114,9 @@ public static class TenantEndpoints
             });
         });
 
-        routes.MapGet("/health/detailed", (TenantStore store) =>
+        routes.MapGet("/health/detailed", (HttpContext http, TenantStore store) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var tenants = store.GetAll();
             var details = tenants.Select(t =>
             {
@@ -134,8 +142,9 @@ public static class TenantEndpoints
 
     public static void MapMetricsEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapGet("/metrics", () =>
+        routes.MapGet("/metrics", (HttpContext http) =>
         {
+            if (!SessionService.RequireAdmin(http)) return Results.Unauthorized();
             var process = System.Diagnostics.Process.GetCurrentProcess();
             var gc = GC.GetGCMemoryInfo();
             

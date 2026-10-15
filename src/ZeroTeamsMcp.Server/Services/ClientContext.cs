@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using ModelContextProtocol;
 
 namespace ZeroTeamsMcp.Server.Services;
 
@@ -52,7 +53,7 @@ public sealed class ClientContext
         if (!string.IsNullOrWhiteSpace(requestedUserId) &&
             !requestedUserId.Equals(identity.Email, StringComparison.OrdinalIgnoreCase))
         {
-            throw new UnauthorizedAccessException(
+            throw new McpException(
                 "Cliente limitado a su propio email. Solo el admin puede consultar otros usuarios.");
         }
 

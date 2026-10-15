@@ -116,6 +116,59 @@ Salida `output: "standalone"`. En monorepo el resultado queda en
 Rutas: `/panel` (dashboard), `/panel/login`, `/panel/tenants`, `/panel/consents`,
 `/panel/health`, `/panel/metrics`, `/panel/playground`.
 
+Además `/panel/connection` ("Mi conexión"): API key del usuario y el snippet de
+integración para Claude Desktop, OpenCode y cURL.
+
+## Acceso al panel e integración (sesión + autoalta)
+
+El panel **no es público**: sin sesión válida, el middleware de Next
+(`apps/panel/src/middleware.ts`) redirige a `/panel/login`. La sesión es una
+cookie `zt_session` (`HttpOnly`, `Secure` tras proxy, `SameSite=Lax`) firmada
+con HMAC-SHA256 por el ControlPlane.
+
+### Piezas
+
+| Pieza | Dónde | Qué hace |
+| --- | --- | --- |
+| `SessionService` | `ControlPlane/Services` | Crea/verifica la cookie; `IsAdminEmail` lee `ADMIN_EMAILS` |
+| `GET /api/session` | `SessionEndpoints` | Identidad actual (401 sin cookie). La usa el middleware |
+| `POST /api/session/logout` | `SessionEndpoints` | Borra la cookie |
+| `GET /api/session/connection` | `SessionEndpoints` | API key del usuario + URL del MCP; **autoalta** si no tiene key |
+| `/auth/callback` | `AuthEndpoints` | Tras el OAuth de Microsoft guarda el token y deja la cookie de sesión |
+
+Registro abierto cerrado: el registro de clientes por API (`POST /api/clients/register`)
+sigue exigiendo `ADMIN_TOKEN`; el alta "normal" ocurre **por login** (el email lo
+valida Microsoft).
+
+### Env nuevo
+
+| Variable | Default | Para qué |
+| --- | --- | --- |
+| `ADMIN_EMAILS` | vacío (**nadie es admin**) | Emails Microsoft con rol admin del panel (separados por coma). Controla tenants, `/metrics`, `/health/detailed`, `/auth/users` y los tokens de otros usuarios |
+| `SESSION_SECRET` | derivado de `ENCRYPTION_KEY` | Clave de firma de la cookie de sesión |
+| `SESSION_TTL_HOURS` | `24` | Duración de la sesión |
+| `CONTROLPLANE_URL` | `NEXT_PUBLIC_CONTROLPLANE_URL` | URL interna que usa el middleware del panel (por defecto `http://127.0.0.1:5100`) |
+
+### Rutas protegidas
+
+| Ruta | Antes | Ahora |
+| --- | --- | --- |
+| `/api/tenants*` (CRUD + consentimiento) | pública | sesión **admin** |
+| `/metrics`, `/health/detailed` | pública | sesión **admin** |
+| `/auth/users` | pública (listaba usuarios) | sesión **admin** |
+| `/auth/token/{userId}`, `/auth/refresh`, `/auth/revoke` | pública (filtraba el AccessToken) | sesión **admin** o dueño del `userId` |
+| `/login`, `/health`, `/auth/status`, `/api/clients/*` | pública | igual (clientes por `ADMIN_TOKEN`) |
+
+### Cómo obtiene un usuario su integración
+
+1. Entra a `https://<dominio>/panel` → sin sesión va a `/panel/login`.
+2. "Login with Microsoft" (popup; el callback deja la cookie) → entra al panel.
+3. `/panel/connection` muestra su API key (se crea sola la primera vez) y los
+   snippets de Claude Desktop / OpenCode / cURL.
+4. Esa key es de **cliente** (lectura, scoped a su email). La escritura
+   (`teams_send_message`, ...) requiere una key admin emitida por CLI:
+   `ADMIN_TOKEN=... dotnet run --project src/ZeroTeamsMcp.Cli -- register --admin`.
+
 ## Modelo de autorización (hardening)
 
 Reglas aplicadas por `CloudAccessGuard`. Solo actúan en **modo cloud**; en

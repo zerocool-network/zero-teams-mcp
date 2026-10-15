@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol;
 using ZeroTeamsMcp.Server.Services;
 using ZeroTeamsMcp.Server.Tools;
 
@@ -45,7 +46,7 @@ public class CloudAccessGuardTests
     [Fact]
     public void RequireAdmin_CloudRegularClient_Throws()
     {
-        Assert.Throws<UnauthorizedAccessException>(
+        Assert.Throws<McpException>(
             () => CloudAccessGuard.RequireAdmin(RegularCtx, "teams_send_message"));
     }
 
@@ -83,7 +84,7 @@ public class CloudAccessGuardTests
         }
         else
         {
-            Assert.Throws<UnauthorizedAccessException>(
+            Assert.Throws<McpException>(
                 () => CloudAccessGuard.EnsureChatMember("t", "chat-1", true, false, clientEmail, members));
         }
     }
@@ -103,7 +104,7 @@ public class CloudAccessGuardTests
     [Fact]
     public void EnsureChatMember_CloudRegularWithoutEmail_Throws()
     {
-        Assert.Throws<UnauthorizedAccessException>(
+        Assert.Throws<McpException>(
             () => CloudAccessGuard.EnsureChatMember("t", "chat-1", true, false, "", ["x@y.com"]));
     }
 
@@ -130,44 +131,44 @@ public class CloudAccessGuardTests
 
     [Fact]
     public async Task CreateChat_RegularClient_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsChatTools.CreateChat(null!, ChatLog, RegularCtx, "group", "id-1"));
 
     [Fact]
     public async Task SendMessage_RegularClient_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsChatTools.SendMessage(null!, ChatLog, RegularCtx, "chat-1", "hola"));
 
     [Fact]
     public async Task CreateChannel_RegularClient_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsChannelTools.CreateChannel(null!, ChannelLog, RegularCtx, "team-1", "canal"));
 
     [Fact]
     public async Task SendChannelMessage_RegularClient_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsChannelTools.SendChannelMessage(null!, ChannelLog, RegularCtx, "team-1", "ch-1", "hola"));
 
     [Fact]
     public async Task CreateCalendarEvent_RegularClient_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsCalendarTools.CreateCalendarEvent(
                 null!, CalendarLog, RegularCtx, "user@contoso.com", "s",
                 "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z"));
 
     [Fact]
     public async Task DeleteCalendarEvent_RegularClient_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsCalendarTools.DeleteCalendarEvent(null!, CalendarLog, RegularCtx, "user@contoso.com", "ev-1"));
 
     [Fact]
     public async Task AddChatMember_RegularClient_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsMemberTools.AddChatMember(null!, MemberLog, RegularCtx, "chat-1", "user-1"));
 
     [Fact]
     public async Task RemoveChatMember_RegularClient_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsMemberTools.RemoveChatMember(null!, MemberLog, RegularCtx, "chat-1", "mem-1"));
 
     // ---------------------------------------------------------------------
@@ -176,12 +177,12 @@ public class CloudAccessGuardTests
 
     [Fact]
     public async Task ListCalendarEvents_RegularClient_OtherUser_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsCalendarTools.ListCalendarEvents(null!, CalendarLog, RegularCtx, "otro@contoso.com"));
 
     [Fact]
     public async Task GetCalendarEvent_RegularClient_OtherUser_Throws()
-        => await Assert.ThrowsAsync<UnauthorizedAccessException>(
+        => await Assert.ThrowsAsync<McpException>(
             () => TeamsCalendarTools.GetCalendarEvent(null!, CalendarLog, RegularCtx, "otro@contoso.com", "ev-1"));
 
     // ---------------------------------------------------------------------
@@ -195,7 +196,7 @@ public class CloudAccessGuardTests
         var ex = await Record.ExceptionAsync(
             () => TeamsChatTools.CreateChat(null!, ChatLog, AdminCtx, "group", "id-1"));
 
-        Assert.IsNotType<UnauthorizedAccessException>(ex);
+        Assert.IsNotType<McpException>(ex);
     }
 
     [Fact]
@@ -204,7 +205,7 @@ public class CloudAccessGuardTests
         var ex = await Record.ExceptionAsync(
             () => TeamsChatTools.CreateChat(null!, ChatLog, StdioCtx, "group", "id-1"));
 
-        Assert.IsNotType<UnauthorizedAccessException>(ex);
+        Assert.IsNotType<McpException>(ex);
     }
 
     [Fact]
@@ -213,6 +214,6 @@ public class CloudAccessGuardTests
         var ex = await Record.ExceptionAsync(
             () => TeamsCalendarTools.ListCalendarEvents(null!, CalendarLog, RegularCtx, "user@contoso.com"));
 
-        Assert.IsNotType<UnauthorizedAccessException>(ex);
+        Assert.IsNotType<McpException>(ex);
     }
 }

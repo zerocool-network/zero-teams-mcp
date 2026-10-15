@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace ZeroTeamsMcp.Server.Tools;
@@ -21,7 +22,7 @@ public sealed class AdminTools
         if (string.IsNullOrEmpty(AdminToken))
             throw new InvalidOperationException("ADMIN_TOKEN not configured on server");
         if (!string.Equals(providedToken, AdminToken, StringComparison.Ordinal))
-            throw new UnauthorizedAccessException("Invalid admin token");
+            throw new McpException("Token de administrador inválido.");
     }
 
     [McpServerTool(Name = "admin_list_tenants")]
