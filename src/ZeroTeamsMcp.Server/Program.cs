@@ -10,6 +10,7 @@ using OpenTelemetry.Trace;
 using Polly;
 using ZeroTeamsMcp.Core.Auth;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 var transport = Environment.GetEnvironmentVariable("TRANSPORT") ?? "stdio";
 var tenantId = Environment.GetEnvironmentVariable("AZURE_TENANT_ID") ?? "";
@@ -35,7 +36,16 @@ if (transport.Equals("http", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddCors(o => o.AddPolicy("mcp", p =>
         p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
     builder.Logging.AddConsole().SetMinimumLevel(LogLevel.Information);
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<ClientContext>();
     builder.Services.AddSingleton(new GraphAuthProvider(tenantId, clientId, clientSecret));
+
+    builder.Services.AddHttpClient("controlplane", client =>
+    {
+        client.BaseAddress = new Uri(controlPlaneUrl);
+        client.Timeout = TimeSpan.FromSeconds(10);
+    });
+    builder.Services.AddSingleton<CloudAuthService>();
     
     builder.Services.AddHttpClient("graph", client =>
     {
@@ -113,6 +123,26 @@ if (transport.Equals("http", StringComparison.OrdinalIgnoreCase))
     });
     
     app.UseCors("mcp");
+
+    // Auth cloud: valida X-Api-Key en /mcp y resuelve la identidad del cliente.
+    app.Use(async (ctx, next) =>
+    {
+        if (ctx.Request.Path.StartsWithSegments("/mcp"))
+        {
+            var key = ctx.Request.Headers["X-Api-Key"].FirstOrDefault();
+            var auth = ctx.RequestServices.GetRequiredService<CloudAuthService>();
+            var identity = await auth.ResolveAsync(key ?? "", ctx.RequestAborted);
+            if (identity is null)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await ctx.Response.WriteAsJsonAsync(new { error = "Invalid or missing X-Api-Key" });
+                return;
+            }
+            ctx.Items["CloudClient"] = identity;
+        }
+        await next();
+    });
+
     app.MapMcp("/mcp");
     app.Run("http://0.0.0.0:5200");
 }

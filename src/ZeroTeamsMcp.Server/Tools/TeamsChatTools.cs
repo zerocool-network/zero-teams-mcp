@@ -5,6 +5,7 @@ using ModelContextProtocol.Server;
 using Microsoft.Graph;
 using Microsoft.Graph.Models;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -18,19 +19,24 @@ public sealed class TeamsChatTools
     };
 
     [McpServerTool(Name = "teams_list_chats")]
-    [Description("Lista los chats de un usuario. Requiere userId (email o UUID). Retorna lista de chats con ID, topic y tipo.")]
+    [Description("Lista los chats de un usuario. Requiere userId (email o UUID) para el admin. Clientes regulares usan automáticamente su propio email registrado. Retorna lista de chats con ID, topic y tipo.")]
     public static async Task<string> ListChats(
         GraphService graph,
         ILogger<TeamsChatTools> logger,
-        [Description("Email o ID del usuario (UUID). Requerido.")] string userId,
+        ClientContext clientContext,
+        [Description("Email o ID del usuario (UUID). Requerido para admin; opcional para clientes regulares (se fuerza su email).")] string? userId = null,
         [Description("Opcional. Máximo de chats a retornar. Default: 20.")] int top = 20,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
+        var targetUserId = clientContext.ResolveTarget(userId);
+        if (string.IsNullOrWhiteSpace(targetUserId))
+            throw new ArgumentException("userId es requerido para el admin.", nameof(userId));
+
         return await logger.ExecuteWithLogging("teams_list_chats", authenticatedUserId, async () =>
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
-            var result = await client.Users[userId].Chats.GetAsync(cfg =>
+            var result = await client.Users[targetUserId].Chats.GetAsync(cfg =>
             {
                 cfg.QueryParameters.Top = top;
             });

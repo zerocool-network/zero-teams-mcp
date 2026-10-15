@@ -278,6 +278,12 @@ zero-teams tenant-consent --tenant-id <ID>
 # Health check
 zero-teams health
 
+# Registro cloud: cliente remoto (recibe API key)
+zero-teams register --email noe@optimaretail.es --url https://cp.tudominio.com
+
+# Registro cloud: admin (wildcard *)
+zero-teams register --admin-token $ADMIN_TOKEN --url https://cp.tudominio.com
+
 # Eliminar tenant
 zero-teams tenant-delete --tenant-id <ID>
 
@@ -337,7 +343,7 @@ zero-teams-mcp/
     ├── skills/
     │   └── zero-teams-integration/
     │       └── SKILL.md            # Skill de integración
-    └── adr/                        # 6 ADRs
+    └── adr/                        # 7 ADRs
 ```
 
 ---
@@ -363,6 +369,7 @@ dotnet build ZeroTeamsMcp.slnx -c Release && dotnet test tests/ZeroTeamsMcp.Test
 ## Documentación
 
 - [Arquitectura](docs/arquitectura.md) — Diagrama de componentes, auth flow, multi-tenant, seguridad
+- [Cloud](docs/CLOUD.md) — Acceso remoto multi-cliente: registro por email, API key, deploy Forge + tunnel
 - [Alcance MVP](docs/alcance-mvp.md) — 25 tools con schema, permisos y criterios de aceptación
 - [Integración con Agentes](docs/integracion-agentes.md) — SDD: cómo conectar agentes IA (Claude Desktop, Cursor, Copilot Studio)
 - [Roadmap](docs/roadmap.md) — F0–F8 con entregables y dependencias
@@ -393,6 +400,7 @@ dotnet build ZeroTeamsMcp.slnx -c Release && dotnet test tests/ZeroTeamsMcp.Test
 | 0004 | Action.Execute para Adaptive Cards | Aceptada |
 | 0005 | ControlPlane REST API | Aceptada |
 | 0006 | Design system shadcn + Neón M365 | Aceptada |
+| 0007 | Cloud multi-cliente con API key | Aceptada |
 
 ---
 

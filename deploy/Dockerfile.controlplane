@@ -8,6 +8,11 @@ RUN dotnet publish src/ZeroTeamsMcp.ControlPlane/ZeroTeamsMcp.ControlPlane.cspro
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+# curl para el healthcheck de docker-compose
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Security: non-root user
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 USER appuser

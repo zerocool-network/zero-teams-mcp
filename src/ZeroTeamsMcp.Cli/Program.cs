@@ -111,6 +111,48 @@ deleteCmd.SetHandler(async (tenantId, baseUrl) =>
         : $"Error: {resp.StatusCode}");
 }, tenantIdOpt, baseUrlOpt);
 
+// --- register command (cloud) ---
+var registerEmailOpt = new Option<string?>("--email", "Email del usuario Teams (obligatorio salvo --admin-token)");
+var registerAdminTokenOpt = new Option<string?>("--admin-token", "ADMIN_TOKEN del ControlPlane. Si se pasa, registra un cliente admin (wildcard *).");
+var registerCmd = new Command("register", "Registrar un cliente remoto en el cloud y obtener su API key")
+{
+    registerEmailOpt, registerAdminTokenOpt, baseUrlOpt
+};
+registerCmd.SetHandler(async (email, adminToken, baseUrl) =>
+{
+    using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
+    var resp = await http.PostAsJsonAsync("/api/clients/register", new { Email = email, AdminToken = adminToken });
+    if (!resp.IsSuccessStatusCode)
+    {
+        var err = await resp.Content.ReadAsStringAsync();
+        Console.Error.WriteLine($"Error: {resp.StatusCode} — {err}");
+        return;
+    }
+    var r = await resp.Content.ReadFromJsonAsync<JsonElement>();
+    var apiKey = r.GetProperty("apiKey").GetString() ?? "";
+    var serverUrl = r.GetProperty("serverUrl").GetString() ?? "";
+    var regEmail = r.GetProperty("email").GetString() ?? "";
+    var isAdmin = r.GetProperty("isAdmin").GetBoolean();
+    Console.WriteLine($"Cliente registrado{(isAdmin ? " (ADMIN)" : "")}:");
+    Console.WriteLine($"  Email   : {regEmail}");
+    Console.WriteLine($"  API Key : {apiKey}");
+    Console.WriteLine("  (guárdala — no se vuelve a mostrar)");
+    Console.WriteLine();
+    Console.WriteLine("Claude Desktop config (claude_desktop_config.json):");
+    var cfg = new
+    {
+        mcpServers = new Dictionary<string, object>
+        {
+            ["teams"] = new
+            {
+                url = serverUrl,
+                headers = new Dictionary<string, string> { ["X-Api-Key"] = apiKey }
+            }
+        }
+    };
+    Console.WriteLine(JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true }));
+}, registerEmailOpt, registerAdminTokenOpt, baseUrlOpt);
+
 // --- test command ---
 var mcpUrlOpt = new Option<string>("--mcp-url", () => "http://localhost:5200", "MCP Server URL");
 var toolArg = new Argument<string>("tool", "Tool name (e.g. teams_list_teams)");
@@ -236,7 +278,7 @@ toolsCmd.SetHandler(async (mcpUrl) =>
 
 var rootCmd = new RootCommand("ZeroTeams MCP CLI — orquestador multi-tenant")
 {
-    addCmd, listCmd, consentCmd, healthCmd, deleteCmd, testCmd, toolsCmd
+    addCmd, listCmd, consentCmd, healthCmd, deleteCmd, registerCmd, testCmd, toolsCmd
 };
 
 return await rootCmd.InvokeAsync(args);

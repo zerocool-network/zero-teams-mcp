@@ -98,6 +98,7 @@ builder.Services.AddSingleton<OAuthService>(sp =>
 
 builder.Services.AddSingleton(sp => new TenantStore(dataDir, sp.GetService<RedisLockService>()));
 builder.Services.AddSingleton(sp => new TokenStore(dataDir, sp.GetRequiredService<OAuthService>(), sp.GetService<RedisLockService>()));
+builder.Services.AddSingleton(sp => new ClientStore(dataDir, sp.GetService<RedisLockService>()));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -187,6 +188,7 @@ app.UseCors();
 app.MapTenantEndpoints();
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
+app.MapClientEndpoints();
 app.MapMetricsEndpoints();
 
 app.Run();

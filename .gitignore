@@ -17,6 +17,9 @@ out/
 test-results/
 playwright-report/
 
+## Build output de despliegue
+publish/
+
 ## Docker
 .env
 

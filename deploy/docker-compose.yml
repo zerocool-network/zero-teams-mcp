@@ -8,6 +8,9 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - DATA_DIR=/data
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - MCP_SERVER_URL=${MCP_SERVER_URL:-http://localhost:5200/mcp}
     volumes:
       - controlplane-data:/data
     healthcheck:
@@ -39,6 +42,9 @@ services:
       - AZURE_TENANT_ID=${AZURE_TENANT_ID}
       - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
       - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - CONTROLPLANE_URL=http://controlplane:5100
       - TRANSPORT=http
     ports:
       - "5200:5200"
