@@ -23,6 +23,47 @@ public static class AuthEndpoints
             || string.Equals(s.UserId, userId, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Página de éxito del callback OAuth: se abre en el popup, avisa al panel
+    /// con un postMessage (mismo origen) y se cierra.
+    ///
+    /// Nota: es un raw string NO interpolado, así que las llaves son literales
+    /// (nada de <c>{{</c>/<c>}}</c>) y los valores se inyectan con Replace usando
+    /// JSON serializado para el JS y HTML-encodeado para el texto.
+    /// </summary>
+    public static string SuccessPageHtml(string userId, string email, string origin)
+    {
+        var jsUserId = JsonSerializer.Serialize(userId);
+        var jsEmail = JsonSerializer.Serialize(email);
+        var jsOrigin = JsonSerializer.Serialize(origin);
+        var htmlEmail = System.Net.WebUtility.HtmlEncode(email);
+
+        var html = """
+            <!DOCTYPE html>
+            <html>
+            <head><title>ZeroTeams — Auth Success</title></head>
+            <body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0a0a0a;color:#e0e0e0;">
+            <div style="text-align:center;">
+                <h1 style="color:#00e5ff;">✓ Authenticated</h1>
+                <p>User: {emailHtml}</p>
+                <p style="color:#888;">You can close this window.</p>
+                <script>
+                    if (window.opener) {
+                        window.opener.postMessage({ type: 'auth-success', userId: {userId}, email: {emailJs} }, {originJs});
+                        window.close();
+                    }
+                </script>
+            </div>
+            </body>
+            </html>
+            """;
+
+        return html.Replace("{emailHtml}", htmlEmail)
+            .Replace("{userId}", jsUserId)
+            .Replace("{emailJs}", jsEmail)
+            .Replace("{originJs}", jsOrigin);
+    }
+
     public static void MapAuthEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/auth");
@@ -63,33 +104,8 @@ public static class AuthEndpoints
             var sessions = http.RequestServices.GetRequiredService<SessionService>();
             sessions.WriteCookie(http, sessions.Create(token.UserId, token.Email));
 
-            // Seguridad: email/userId van serializados como JSON (no interpolados)
-            // y se relaja CSP solo en esta página porque su script es inline.
-            var jsUserId = JsonSerializer.Serialize(token.UserId);
-            var jsEmail = JsonSerializer.Serialize(token.Email);
-            var htmlEmail = System.Net.WebUtility.HtmlEncode(token.Email);
-            var html = """
-                <!DOCTYPE html>
-                <html>
-                <head><title>ZeroTeams — Auth Success</title></head>
-                <body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#0a0a0a;color:#e0e0e0;">
-                <div style="text-align:center;">
-                    <h1 style="color:#00e5ff;">✓ Authenticated</h1>
-                    <p>User: {emailHtml}</p>
-                    <p style="color:#888;">You can close this window.</p>
-                    <script>
-                        if (window.opener) {{
-                            window.opener.postMessage({{ type: 'auth-success', userId: {userId}, email: {emailJs} }}, '*');
-                            window.close();
-                        }}
-                    </script>
-                </div>
-                </body>
-                </html>
-                """;
-            html = html.Replace("{emailHtml}", htmlEmail)
-                .Replace("{userId}", jsUserId)
-                .Replace("{emailJs}", jsEmail);
+            var html = SuccessPageHtml(token.UserId, token.Email, SessionService.PublicOrigin(http));
+            // Se relaja CSP solo en esta página porque su script es inline.
             http.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'unsafe-inline';";
             http.Response.ContentType = "text/html";
             await http.Response.WriteAsync(html);

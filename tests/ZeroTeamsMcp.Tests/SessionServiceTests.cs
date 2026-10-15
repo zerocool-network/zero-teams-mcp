@@ -115,6 +115,36 @@ public class SessionServiceTests
     }
 
     [Fact]
+    public void PublicOrigin_UsaXForwardedProtoYHost()
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Headers["X-Forwarded-Proto"] = "https";
+        ctx.Request.Host = new HostString("mcp-teams.optimaonline.eu");
+
+        Assert.Equal("https://mcp-teams.optimaonline.eu", SessionService.PublicOrigin(ctx));
+    }
+
+    [Fact]
+    public void PublicOrigin_PrefiereXForwardedHost()
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Headers["X-Forwarded-Proto"] = "https";
+        ctx.Request.Headers["X-Forwarded-Host"] = "panel.example.com";
+        ctx.Request.Host = new HostString("127.0.0.1:5100");
+
+        Assert.Equal("https://panel.example.com", SessionService.PublicOrigin(ctx));
+    }
+
+    [Fact]
+    public void PublicOrigin_SinCabeceras_CaeAlRequest()
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Host = new HostString("localhost:5100");
+
+        Assert.Equal("http://localhost:5100", SessionService.PublicOrigin(ctx));
+    }
+
+    [Fact]
     public void IsAdminEmail_UsaListaDeEnv()
     {
         var previous = Environment.GetEnvironmentVariable("ADMIN_EMAILS");

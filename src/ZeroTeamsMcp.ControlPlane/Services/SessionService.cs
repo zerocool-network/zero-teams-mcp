@@ -128,6 +128,25 @@ public sealed class SessionService
         ctx.Request.IsHttps ||
         string.Equals(ctx.Request.Headers["X-Forwarded-Proto"].FirstOrDefault(), "https", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Origen público (esquema://host) tal como lo ve el navegador. Detrás de
+    /// nginx, nginx pasa "Host $host" y "X-Forwarded-Proto $scheme"; el panel y
+    /// el ControlPlane comparten host, así que sirve como targetOrigin del
+    /// postMessage del callback OAuth.
+    /// </summary>
+    public static string PublicOrigin(HttpContext ctx)
+    {
+        var proto = ctx.Request.Headers["X-Forwarded-Proto"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(proto))
+            proto = ctx.Request.IsHttps ? "https" : "http";
+
+        var host = ctx.Request.Headers["X-Forwarded-Host"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(host))
+            host = ctx.Request.Host.Value;
+
+        return $"{proto}://{host}";
+    }
+
     // --- guards reutilizables en los endpoints ---
 
     /// <summary>Sesión válida o null.</summary>
