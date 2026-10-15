@@ -79,6 +79,43 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST https://mcp.tudominio.com/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
+## Panel web (Next.js)
+
+El panel (`apps/panel`) se sirve bajo el prefijo `/panel` del mismo dominio cloud
+(`https://<dominio>/panel`) usando `basePath`, para no necesitar un subdominio extra.
+El `basePath` es opcional y se controla por env: **sin** `NEXT_PUBLIC_BASE_PATH` el panel
+se sirve en la raíz (uso Docker/compose).
+
+### Build
+
+```bash
+cd apps/panel
+NEXT_PUBLIC_BASE_PATH=/panel \
+NEXT_PUBLIC_CONTROLPLANE_URL=https://<dominio> \
+NEXT_PUBLIC_MCP_URL=https://<dominio> \
+pnpm build
+```
+
+Salida `output: "standalone"`. En monorepo el resultado queda en
+`.next/standalone/apps/panel/` (contiene `server.js` + `node_modules` + `.next`).
+
+### Despliegue (sin Docker)
+
+1. `apps/panel/.next/standalone/apps/panel/` → `<base>/panel/`
+2. `apps/panel/.next/static/` → `<base>/panel/.next/static/`
+3. `apps/panel/public/` → `<base>/panel/public/`
+4. Run script `<base>/panel.run.sh`:
+   ```bash
+   export NODE_ENV=production PORT=3000 HOSTNAME=127.0.0.1
+   cd <base>/panel && exec node server.js
+   ```
+5. Daemon supervisor `mcp-panel` (Forge background process) apuntando al run script.
+6. nginx: `location /panel { proxy_pass http://127.0.0.1:3000; }`. El prefijo `/panel`
+   es a la vez el `basePath` de Next y la ruta nginx: **sin rewrite** (pasar la URI tal cual).
+
+Rutas: `/panel` (dashboard), `/panel/login`, `/panel/tenants`, `/panel/consents`,
+`/panel/health`, `/panel/metrics`, `/panel/playground`.
+
 ## Límites / hardening pendiente
 
 - `teams_get_chat_messages` acepta cualquier `chatId` conocido. Los `chatId` son aleatorios y solo se obtienen vía `teams_list_chats` (ya scoped), así que el riesgo práctico es bajo. Si hace falta, se puede verificar pertenencia al chat por membresía Graph.
