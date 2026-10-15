@@ -11,11 +11,15 @@ BASE=/home/forge/mcp-teams.optimaonline.eu
 CP=http://127.0.0.1:5100
 PANEL=http://127.0.0.1:3000
 MCP=http://127.0.0.1:5200
-ADMIN_EMAIL=${ADMIN_EMAIL:-noe.martinez@hifenix.com}
 REGULAR_EMAIL=${REGULAR_EMAIL:-e2e-sesion@example.com}
 
 # shellcheck disable=SC1091
 set -a; . "$BASE/controlplane.env"; set +a
+
+# El admin del panel sale de ADMIN_EMAILS (primer email de la lista). Se puede
+# forzar otro con ADMIN_EMAIL=... ; antes había un email personal hardcodeado.
+ADMIN_EMAIL=${ADMIN_EMAIL:-${ADMIN_EMAILS%%,*}}
+: "${ADMIN_EMAIL:?falta ADMIN_EMAILS en controlplane.env (o pasa ADMIN_EMAIL)}"
 
 pass=0; fail=0
 check() { # check <descripcion> <esperado> <obtenido>
