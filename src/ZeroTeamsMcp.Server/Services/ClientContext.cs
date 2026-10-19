@@ -37,7 +37,7 @@ public sealed class ClientContext
 
     /// <summary>
     /// Resuelve el userId objetivo permitido para este request:
-    /// - Admin: usa el userId pedido tal cual.
+    /// - Admin: usa el userId pedido tal cual, o un default si no se especifica (compatibilidad con clientes antiguos que no mandan userId).
     /// - Cliente regular: fuerza su propio email (bloquea consultar otros).
     /// - Sin identidad (stdio/legacy): devuelve el userId pedido.
     /// </summary>
@@ -48,7 +48,22 @@ public sealed class ClientContext
             return requestedUserId;
 
         if (identity.IsAdmin)
-            return requestedUserId;
+        {
+            if (!string.IsNullOrWhiteSpace(requestedUserId))
+                return requestedUserId;
+
+            // Compatibilidad: cliente no envía userId. Usar email real si lo tenemos, sino fallback env/default.
+            if (!string.IsNullOrWhiteSpace(identity.Email) && identity.Email != "*")
+                return identity.Email;
+
+            var adminDefault = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_USER") 
+                ?? Environment.GetEnvironmentVariable("ADMIN_EMAIL")
+                ?? Environment.GetEnvironmentVariable("DEFAULT_USER_ID");
+            if (!string.IsNullOrWhiteSpace(adminDefault))
+                return adminDefault.Trim();
+
+            return requestedUserId; // los tools validarán y darán error claro
+        }
 
         if (!string.IsNullOrWhiteSpace(requestedUserId) &&
             !requestedUserId.Equals(identity.Email, StringComparison.OrdinalIgnoreCase))
