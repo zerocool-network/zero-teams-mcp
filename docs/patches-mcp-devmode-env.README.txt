@@ -1,0 +1,17 @@
+Selective docs patches (apply manually; repo has unrelated dirty changes)
+
+=== deploy/.env.example: insert after `TRANSPORT=stdio` ===
+# Dev mode (diagnósticos seguros, SIN relajar auth/guards/denylist)
+# MCP_DEV_MODE=true  # Server: log Debug + responseChars (sin PII). ControlPlane: Swagger habilitado.
+
+=== README.md: add section (suggest near env/config or MCP tools) ===
+### Dev mode (seguro)
+- `MCP_DEV_MODE=true|1`: diagnósticos de desarrollo (Server log Debug + `responseChars` sin PII/cuerpos). **No relaja** auth/API key, `RestrictedAccessGuard`, denylist ni disclosure.
+- ControlPlane: Swagger/UI solo con `MCP_DEV_MODE` o `ASPNETCORE_ENVIRONMENT=Development`.
+
+### Mail (eficiencia tokens, ADR-0010)
+- `mail_list_messages`: `format=triage|compact|full` (default legacy `full`), `includeQueryEcho=false`, `previewChars`, `fields` whitelist.
+- `mail_get_message`: `bodyFormat=text|html|none` (default legacy `html`), `maxBodyChars` (default 8000), `includeHeaders`, `bodyTruncated`.
+- `mail_read_attachment`: `offset`, `maxChars` (default 8000), `nextOffset/truncated/totalChars`.
+- `mail_search_hits`: búsqueda acotada multi-buzón/rango/query, `coverage/truncated/nextSuggested`.
+Refs: docs/SDD-token-efficiency-devmode.md, docs/adr/ADR-0010-token-efficient-mcp-responses.md, docs/release-notes-token-efficiency.md
