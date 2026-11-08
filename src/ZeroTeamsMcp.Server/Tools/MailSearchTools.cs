@@ -173,7 +173,7 @@ public sealed class MailSearchTools
                                 statusMessage = ex.Message;
                             }
 
-                            coverage.Add(new { userId = target, folder = folderId ?? "all", since, until, query = q, status, callsUsed = unitCalls, pendingCursor, message = statusMessage });
+                            coverage.Add(new { userId = target, folder = folderId ?? "all", since, until, query = q, status, callsUsed = unitCalls, hasMore = status == "pending", pendingCursor, message = statusMessage });
                             if (status == "pending" || truncated) truncated = true;
                         }
                         if (callsUsed >= maxCalls || hits.Count >= maxHits) truncated = true;
@@ -201,7 +201,7 @@ public sealed class MailSearchTools
                 };
             }).ToArray();
 
-            var nextSuggested = coverage.Where(c => (string?)c.GetType().GetProperty("status")?.GetValue(c) == "pending").Take(10)
+            var nextSuggested = coverage.Where(c => string.Equals((string?)c.GetType().GetProperty("status")?.GetValue(c), "pending", StringComparison.OrdinalIgnoreCase)).Take(10)
                 .Select(c => new { userId = c.GetType().GetProperty("userId")?.GetValue(c), folder = c.GetType().GetProperty("folder")?.GetValue(c), since = c.GetType().GetProperty("since")?.GetValue(c), until = c.GetType().GetProperty("until")?.GetValue(c), query = c.GetType().GetProperty("query")?.GetValue(c) }).ToArray();
 
             return (object)new
