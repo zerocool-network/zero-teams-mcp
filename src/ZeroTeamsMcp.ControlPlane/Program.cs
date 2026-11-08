@@ -183,13 +183,20 @@ app.Use(async (ctx, next) =>
 
 app.UseRateLimiter();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+var cpDevMode = app.Environment.IsDevelopment()
+    || Environment.GetEnvironmentVariable("MCP_DEV_MODE") == "1"
+    || string.Equals(Environment.GetEnvironmentVariable("MCP_DEV_MODE"), "true", StringComparison.OrdinalIgnoreCase);
+if (cpDevMode)
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 app.UseCors();
 
 app.MapSessionEndpoints();
 app.MapTenantEndpoints();
 app.MapHealthEndpoints();
+app.MapGet("/", () => Results.Redirect("/panel"));
 app.MapAuthEndpoints();
 app.MapClientEndpoints();
 app.MapMetricsEndpoints();

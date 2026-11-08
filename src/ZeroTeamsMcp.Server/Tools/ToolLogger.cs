@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Text.Json;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -16,7 +17,8 @@ internal static class ToolLogger
         this ILogger logger,
         string toolName,
         string? userId,
-        Func<Task<T>> action)
+        Func<Task<T>> action,
+        JsonSerializerOptions? serializerOptions = null)
     {
         var stopwatch = Stopwatch.StartNew();
         var requestId = Guid.NewGuid().ToString("N")[..8];
@@ -29,12 +31,18 @@ internal static class ToolLogger
         {
             var result = await action();
             stopwatch.Stop();
+            var json = JsonSerializer.Serialize(result, serializerOptions ?? JsonOpts);
 
-            logger.LogInformation(
-                "MCP tool completed: {ToolName}, requestId={RequestId}, durationMs={DurationMs}, success=true",
-                toolName, requestId, stopwatch.ElapsedMilliseconds);
+            if (DevDiagnostics.Enabled)
+                logger.LogDebug(
+                    "MCP tool completed: {ToolName}, requestId={RequestId}, durationMs={DurationMs}, responseChars={ResponseChars}, success=true",
+                    toolName, requestId, stopwatch.ElapsedMilliseconds, DevDiagnostics.ApproxResponseChars(json));
+            else
+                logger.LogInformation(
+                    "MCP tool completed: {ToolName}, requestId={RequestId}, durationMs={DurationMs}, success=true",
+                    toolName, requestId, stopwatch.ElapsedMilliseconds);
 
-            return JsonSerializer.Serialize(result, JsonOpts);
+            return json;
         }
         catch (Exception ex)
         {

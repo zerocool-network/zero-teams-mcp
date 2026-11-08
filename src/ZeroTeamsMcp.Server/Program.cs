@@ -13,6 +13,8 @@ using ZeroTeamsMcp.Core.Graph;
 using ZeroTeamsMcp.Server.Services;
 
 var transport = Environment.GetEnvironmentVariable("TRANSPORT") ?? "stdio";
+var mcpDevMode = string.Equals(Environment.GetEnvironmentVariable("MCP_DEV_MODE"), "true", StringComparison.OrdinalIgnoreCase)
+    || Environment.GetEnvironmentVariable("MCP_DEV_MODE") == "1";
 var tenantId = Environment.GetEnvironmentVariable("AZURE_TENANT_ID") ?? "";
 var clientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID") ?? "";
 var clientSecret = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET") ?? "";
@@ -35,7 +37,7 @@ if (transport.Equals("http", StringComparison.OrdinalIgnoreCase))
     var builder = WebApplication.CreateBuilder(args);
     builder.Services.AddCors(o => o.AddPolicy("mcp", p =>
         p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
-    builder.Logging.AddConsole().SetMinimumLevel(LogLevel.Information);
+    builder.Logging.AddConsole().SetMinimumLevel(mcpDevMode ? LogLevel.Debug : LogLevel.Information);
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ClientContext>();
     builder.Services.AddSingleton(new GraphAuthProvider(tenantId, clientId, clientSecret));
@@ -82,9 +84,13 @@ if (transport.Equals("http", StringComparison.OrdinalIgnoreCase))
         var delegated = sp.GetRequiredService<DelegatedAuthProvider>();
         return new GraphService(auth, delegated);
     });
-    builder.Services.AddMcpServer()
+    builder.Services.AddMcpServer(options =>
+        {
+            options.ServerInstructions = ServerDisclosurePolicy.Instructions;
+        })
         .WithHttpTransport()
-        .WithToolsFromAssembly();
+        .WithToolsFromAssembly()
+        .WithReadOnlyCloudTools();
 
     // OpenTelemetry (HTTP transport only)
     var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT") ?? "http://localhost:4317";
@@ -127,6 +133,12 @@ if (transport.Equals("http", StringComparison.OrdinalIgnoreCase))
     // Auth cloud: valida X-Api-Key en /mcp y resuelve la identidad del cliente.
     app.Use(async (ctx, next) =>
     {
+        if (ctx.Request.Path.StartsWithSegments("/mcp/files"))
+        {
+            await next();
+            return;
+        }
+
         if (ctx.Request.Path.StartsWithSegments("/mcp"))
         {
             var key = ctx.Request.Headers["X-Api-Key"].FirstOrDefault();
@@ -143,6 +155,12 @@ if (transport.Equals("http", StringComparison.OrdinalIgnoreCase))
         await next();
     });
 
+    app.MapGet("/mcp/files/{id}", (string id) =>
+    {
+        var opened = MailAttachmentStore.Open(id);
+        if (opened is null) return Results.NotFound();
+        return Results.File(opened.Value.Path, opened.Value.ContentType, opened.Value.Name);
+    });
     app.MapMcp("/mcp");
     app.Run("http://0.0.0.0:5200");
 }
@@ -150,7 +168,9 @@ else
 {
     using var stdin = Console.OpenStandardInput();
     var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder(args);
-    builder.Logging.AddConsole().SetMinimumLevel(LogLevel.Information);
+    builder.Logging.AddConsole().SetMinimumLevel(mcpDevMode ? LogLevel.Debug : LogLevel.Information);
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<ClientContext>();
     builder.Services.AddSingleton(new GraphAuthProvider(tenantId, clientId, clientSecret));
     
     builder.Services.AddHttpClient("graph", client =>
@@ -188,9 +208,13 @@ else
         var delegated = sp.GetRequiredService<DelegatedAuthProvider>();
         return new GraphService(auth, delegated);
     });
-    builder.Services.AddMcpServer()
+    builder.Services.AddMcpServer(options =>
+        {
+            options.ServerInstructions = ServerDisclosurePolicy.Instructions;
+        })
         .WithStdioServerTransport()
-        .WithToolsFromAssembly();
+        .WithToolsFromAssembly()
+        .WithReadOnlyCloudTools();
 
     await builder.Build().RunAsync();
 }
