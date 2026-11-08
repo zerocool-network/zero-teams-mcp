@@ -42,6 +42,7 @@ public sealed class MailDriveTools
         [Description("Opcional. compact|triage|full. Default full (legacy). triage minimiza tokens.")] string? format = null,
         [Description("Opcional. true incluye eco de filtros; default false.")] bool includeQueryEcho = false,
         [Description("Opcional. Longitud de preview en compact (0..280).")] int? previewChars = null,
+        [Description("Opcional. Campos por mensaje (whitelist csv): id,subject,from,to,receivedDateTime,sentDateTime,hasAttachments,preview,date,mailbox,folder.")] string? fields = null,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
@@ -53,7 +54,8 @@ public sealed class MailDriveTools
         var pChars = previewChars.HasValue
             ? Math.Clamp(previewChars.Value, 0, 280)
             : fmt == MailListFormat.Triage ? 0 : fmt == MailListFormat.Compact ? 120 : 280;
-        var jsonOpts = fmt == MailListFormat.Full ? (JsonSerializerOptions?)null : CompactJson;
+        var fieldSet = ParseMailFields(fields);
+        var jsonOpts = fmt == MailListFormat.Full && fieldSet is null ? (JsonSerializerOptions?)null : CompactJson;
         return await logger.ExecuteWithLogging("mail_list_messages", authenticatedUserId, async () =>
         {
             await RestrictedAccessGuard.EnsureUserAsync(
@@ -111,7 +113,7 @@ public sealed class MailDriveTools
                     .Min();
                 var nextPage = string.IsNullOrEmpty(current?.OdataNextLink) ? (int?)null : page + 1;
                 var beforeCursor = messages.Count == 0 || oldest == default ? null : oldest.ToUniversalTime().ToString("o");
-                var projected = messages.Select(m => ProjectMailMessage(m, fmt, dateField, pChars)).ToArray();
+                var projected = messages.Select(m => ProjectMailMessage(m, fmt, dateField, pChars, target, folderId ?? "all", fieldSet)).ToArray();
 
                 if (!includeQueryEcho && fmt != MailListFormat.Full)
                 {
@@ -614,14 +616,46 @@ public sealed class MailDriveTools
         return (truncated ? s[..maxChars] : s, truncated);
     }
 
+    private static readonly HashSet<string> AllowedMailFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "id","subject","from","to","receivedDateTime","sentDateTime","date","hasAttachments","preview","mailbox","folder"
+    };
+
+    internal static HashSet<string>? ParseMailFields(string? fields)
+    {
+        if (string.IsNullOrWhiteSpace(fields)) return null;
+        var set = fields.Split([',', ';', ' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(AllowedMailFields.Contains)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return set.Count == 0 ? null : set;
+    }
+
     internal static object ProjectMailMessage(
         Microsoft.Graph.Models.Message m,
         MailListFormat format,
         string? dateField,
-        int previewChars)
+        int previewChars,
+        string? mailbox = null,
+        string? folder = null,
+        HashSet<string>? fields = null)
     {
         var from = m.From?.EmailAddress?.Address;
         var msgDate = dateField == "sentDateTime" ? m.SentDateTime : m.ReceivedDateTime;
+        var to = m.ToRecipients?.Select(r => r.EmailAddress?.Address).Where(a => a is not null).ToArray();
+        var preview = format == MailListFormat.Compact || format == MailListFormat.Triage ? TrimPlain(m.BodyPreview, previewChars) : Trim(m.BodyPreview, 280);
+
+        if (fields is not null)
+        {
+            var d = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            void add(string k, object? v) { if (fields.Contains(k) && v is not null) d[k] = v; else if (fields.Contains(k)) d[k] = v; }
+            add("id", m.Id); add("subject", m.Subject); add("from", from);
+            add("to", to is { Length: > 0 } ? to : null);
+            add("receivedDateTime", m.ReceivedDateTime); add("sentDateTime", m.SentDateTime);
+            add("date", msgDate); add("hasAttachments", m.HasAttachments);
+            add("preview", preview); add("mailbox", mailbox); add("folder", folder);
+            return d;
+        }
+
         if (format == MailListFormat.Triage)
         {
             return new
@@ -634,8 +668,6 @@ public sealed class MailDriveTools
             };
         }
 
-        var to = m.ToRecipients?.Select(r => r.EmailAddress?.Address).Where(a => a is not null).ToArray();
-        var preview = format == MailListFormat.Compact ? TrimPlain(m.BodyPreview, previewChars) : Trim(m.BodyPreview, 280);
         if (format == MailListFormat.Compact)
         {
             return new

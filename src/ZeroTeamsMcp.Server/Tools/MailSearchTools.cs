@@ -109,8 +109,9 @@ public sealed class MailSearchTools
                                     coverage.Add(new { userId = target, folder, since, until, query = q, status = "error", error = "date", message = dateError, callsUsed = 0 });
                                     continue;
                                 }
-                                var useSearch = !string.IsNullOrWhiteSpace(fromAddress) || !string.IsNullOrWhiteSpace(toAddress)
+                                var hasQueryTerms = !string.IsNullOrWhiteSpace(fromAddress) || !string.IsNullOrWhiteSpace(toAddress)
                                     || !string.IsNullOrWhiteSpace(q) || !string.IsNullOrWhiteSpace(subject);
+                                var useSearch = hasQueryTerms;
                                 string? search = null;
                                 if (useSearch)
                                 {
@@ -154,9 +155,11 @@ public sealed class MailSearchTools
                                         : await client.Users[target].MailFolders[folderId].Messages.WithUrl(next).GetAsync();
                                     callsUsed++; unitCalls++; pages++;
                                 }
-                                if (current is not null && !string.IsNullOrEmpty(current.OdataNextLink) && status == "done" && pages >= 2)
+                                if (current is not null && !string.IsNullOrEmpty(current.OdataNextLink) && status == "done")
                                 {
-                                    status = "pending"; truncated = true; pendingCursor = "hasMore"; // simplificado
+                                    status = "pending";
+                                    truncated = true;
+                                    pendingCursor = TrimCursor(current.OdataNextLink);
                                 }
                             }
                             catch (ODataError ex)
@@ -170,7 +173,7 @@ public sealed class MailSearchTools
                                 statusMessage = ex.Message;
                             }
 
-                            coverage.Add(new { userId = target, folder = folderId ?? "all", since, until, query = q, status, callsUsed = unitCalls, pending = pendingCursor, message = statusMessage });
+                            coverage.Add(new { userId = target, folder = folderId ?? "all", since, until, query = q, status, callsUsed = unitCalls, pendingCursor, message = statusMessage });
                             if (status == "pending" || truncated) truncated = true;
                         }
                         if (callsUsed >= maxCalls || hits.Count >= maxHits) truncated = true;
@@ -214,7 +217,7 @@ public sealed class MailSearchTools
         }, MailDriveTools.CompactJson);
     }
 
-    private static List<string> SplitList(string? value)
+    internal static List<string> SplitList(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return [];
         return value.Split([',', ';', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -227,7 +230,14 @@ public sealed class MailSearchTools
         return x switch { "sentitems" or "enviados" or "enviado" => "sent", "inbox" or "entrada" or "bandeja" => "inbox", _ => x };
     }
 
-    private static List<(string? Since, string? Until, string? Error)> ParseRanges(string ranges)
+    private static string? TrimCursor(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        // nextLink can be large; keep enough for debugging but avoid blowing tokens
+        return url.Length <= 240 ? url : url[..240] + "...";
+    }
+
+    internal static List<(string? Since, string? Until, string? Error)> ParseRanges(string ranges)
     {
         if (string.IsNullOrWhiteSpace(ranges)) return [(null, null, null)];
         ranges = ranges.Trim();

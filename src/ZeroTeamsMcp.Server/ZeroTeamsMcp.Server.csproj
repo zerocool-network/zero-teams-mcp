@@ -23,4 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="../ZeroTeamsMcp.Core/ZeroTeamsMcp.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ZeroTeamsMcp.Tests" />
+  </ItemGroup>
 </Project>
