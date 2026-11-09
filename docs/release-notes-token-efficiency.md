@@ -13,6 +13,10 @@
 ## Defaults por entorno (fase 2)
 - `MCP_MAIL_DEFAULTS=efficient` (o `1`/`true`): aplica defaults baratos **solo** cuando el cliente no pasa el parámetro — `mail_list_messages.format=triage`, `mail_get_message.bodyFormat=text` y `maxBodyChars=2000`. Sin la variable se mantiene `full`/`html`/`8000` (legacy).
 - Un valor explícito del cliente siempre gana. No afecta a auth/guards/denylist.
+- Medición local de referencia (mismo buzón, top=10): `mail_list_messages` 7 574 → 3 681 chars (-51%); `mail_get_message` 10 663 → 1 717 chars (-84%).
+
+## stdio
+- En `TRANSPORT=stdio` los logs van a **stderr**; stdout queda solo para JSON-RPC (antes se mezclaban y rompían clientes estrictos).
 
 ## Compatibilidad
 - Defaults legacy en fase 1 para minimizar roturas; `ServerDisclosurePolicy` instruye params eficientes. Cambio futuro de defaults será versionado.

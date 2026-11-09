@@ -168,7 +168,10 @@ else
 {
     using var stdin = Console.OpenStandardInput();
     var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder(args);
-    builder.Logging.AddConsole().SetMinimumLevel(mcpDevMode ? LogLevel.Debug : LogLevel.Information);
+    // MCP stdio: stdout es solo protocolo. Los logs van a stderr.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace)
+        .SetMinimumLevel(mcpDevMode ? LogLevel.Debug : LogLevel.Information);
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ClientContext>();
     builder.Services.AddSingleton(new GraphAuthProvider(tenantId, clientId, clientSecret));
