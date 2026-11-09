@@ -39,6 +39,10 @@ appsettings.Development.json
 ## Datos locales del módulo insider (casos, auditoría, exportaciones)
 data/
 
+## Debug temporal de despliegue (Forge) y config local de agentes
+deploy/forge/
+.claude/
+
 ## Docs internos (no público)
 docs/credenciales.md
 docs/MEJORAS_POST_FORENSIC.md
