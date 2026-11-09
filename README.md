@@ -74,18 +74,40 @@ Te guía paso a paso: crea la app en Azure AD, copia credenciales, configura per
 
 #### 3. API Permissions (Application)
 
-| Permiso | Para |
-|---|---|
-| `Team.ReadBasic.All` | Listar equipos |
-| `Channel.ReadBasic.All` | Listar canales |
-| `Chat.ReadWrite.All` | Chats + enviar mensajes |
-| `ChatMessage.Send` | Enviar mensajes |
-| `Calendars.ReadWrite` | Calendario |
-| `OnlineMeetings.ReadWrite` | Crear/gestionar reuniones |
-| `OnlineMeetingAttendance.Read` | Asistencia a reuniones |
-| `User.Read.All` | Info de usuarios |
+| Permiso | Para | Alcance real |
+|---|---|---|
+| `Team.ReadBasic.All` | Listar equipos | tenant |
+| `Channel.ReadBasic.All` | Listar canales | tenant |
+| `Chat.ReadWrite.All` | Chats + enviar mensajes | **todos los chats del tenant (lectura y envío)** |
+| `ChatMessage.Send` | Enviar mensajes | tenant |
+| `Calendars.ReadWrite` | Calendario | tenant |
+| `OnlineMeetings.ReadWrite` | Crear/gestionar reuniones | tenant |
+| `OnlineMeetingAttendance.Read` | Asistencia a reuniones | tenant |
+| `User.Read.All` | Info de usuarios | tenant |
+| `Files.Read.All` | `teams_get_file_content` (adjuntos de chat en OneDrive) | **todos los OneDrive/SharePoint** |
 
 6. **Grant admin consent** para cada permiso (botón verde)
+
+> ⚠️ **`Files.Read.All` es de alcance tenant completo.** Con consentimiento de admin, la app puede leer todos los
+> OneDrive de la organización, incluidos RRHH, nóminas y legal. No hay scoping por carpeta a nivel de Graph. Solo lo
+> necesitan los tools de descarga de adjuntos; si no usas `teams_get_file_content`, quítalo.
+
+**`Mail.Read` NO va en esta app.** Lo usan los tools `insider_*`, y esos viven en una App Registration distinta
+(`INSIDER_AZURE_CLIENT_ID`). Si tu app de Teams ya tiene `Mail.Read` concedido, retíralo: ningún tool de este servidor
+lo usa, y mantenerlo significa que comprometer el MCP público entrega todos los buzones del tenant.
+
+La app de investigación sí necesita `Mail.Read`, `Files.Read.All` y `Chat.ReadWrite.All`. Como `Mail.Read` **no se
+puede acotar por buzón en Graph**, lo único que lo limita es una **Application Access Policy** de Exchange Online:
+
+> ```powershell
+> New-ApplicationAccessPolicy -AppId <INSIDER_AZURE_CLIENT_ID> `
+>   -PolicyScopeGroupId GRP-Insider-Investigations@tudominio.com `
+>   -AccessRight RestrictAccess `
+>   -Description "zero-teams-mcp-insider: solo buzones de investigación"
+> ```
+>
+> Sin ese paso, la app de investigación puede leer el correo de toda la plantilla. Ver
+> [docs/INSIDER_TOOLS.md](docs/INSIDER_TOOLS.md).
 
 #### 4. Variables de entorno
 
@@ -93,6 +115,24 @@ Te guía paso a paso: crea la app en Azure AD, copia credenciales, configura per
 export AZURE_TENANT_ID="tu-tenant-id"
 export AZURE_CLIENT_ID="tu-client-id"
 export AZURE_CLIENT_SECRET="tu-client-secret"
+```
+
+Los tools `insider_*` corren en un **servicio aparte** (`src/ZeroTeamsMcp.Insider`, puerto 5300) con variables propias:
+
+```bash
+# Credenciales de Azure PROPIAS — no reutilices las del MCP de Teams
+export INSIDER_AZURE_TENANT_ID="tu-tenant-id"
+export INSIDER_AZURE_CLIENT_ID="<app-id-de-investigacion>"
+export INSIDER_AZURE_CLIENT_SECRET="<secret-de-esa-app>"
+
+export INSIDER_KEYS="miguel=clave-larga-1,legal=clave-larga-2"  # una clave por persona; el nombre va a la auditoría
+export INSIDER_APPROVER_TOKEN="..."                        # segunda persona (DPO/RRHH/Legal), sin esto no se abren casos
+export INSIDER_ORG_DOMAINS="tudominio.com,filial.com"      # dominios propios; lo demás se marca como externo
+export INSIDER_DB_PATH="data/insider.db"                   # casos + auditoría encadenada
+export INSIDER_EXPORT_DIR="data/exports"                   # exportaciones de evidencia
+export INSIDER_TOOLS="on"                                  # "off" = kill switch
+export INSIDER_BIND="http://127.0.0.1:5300"                # default seguro: solo local
+export INSIDER_ALLOWED_IPS=""                              # opcional: allowlist de origen
 ```
 
 O crear `deploy/.env`:
@@ -139,7 +179,7 @@ cd apps/panel && pnpm install && pnpm dev
 
 ---
 
-## MCP Tools — 19 herramientas activas
+## MCP Tools — 19 herramientas activas (MCP de Teams)
 
 ### Teams (13 tools)
 
@@ -171,6 +211,32 @@ cd apps/panel && pnpm install && pnpm dev
 | `admin_health` | Health check del ControlPlane | `GET /health` |
 
 > **Nota:** Meetings y Calendar tools están disponibles pero desactivados (requieren Exchange Online Application Access Policy).
+
+### Insider Risk (12 tools) — servicio separado `:5300`
+
+Los tools `insider_*` **no viven en este servidor**. Están en `src/ZeroTeamsMcp.Insider`, con su propio binario,
+su propia App Registration de Azure y su propio endpoint. Guía completa: [docs/INSIDER_TOOLS.md](docs/INSIDER_TOOLS.md).
+
+Motivo: `WithToolsFromAssembly()` registra todo lo que haya en el ensamblado. Mantener el correo en el mismo binario
+significa que un refactor futuro puede re-exponer `Mail.Read` en el endpoint público sin que nadie lo note.
+
+| Tool | Descripción | Permiso | Scope del caso |
+|------|-------------|---------|----------------|
+| `insider_case_open` | Abre caso con doble aprobación y custodia de la auditoría | — | — |
+| `insider_case_list` | Lista o detalla casos | — | — |
+| `insider_case_close` | Cierra el caso (requiere token del aprobador) | — | — |
+| `insider_audit_trail` | Log encadenado: quién consultó qué y cuándo | — | — |
+| `insider_audit_verify` | Verifica que nadie editó la auditoría | — | — |
+| `insider_permissions_check` | Qué roles tiene el token y qué tools pueden funcionar | — | — |
+| `insider_forwarding_rules` | Reglas de reenvío a externos (principal señal de exfiltración) | `Mail.Read` | `signals` |
+| `insider_external_sharing` | Enlaces anónimos y permisos externos en OneDrive | `Files.Read.All` | `files` |
+| `insider_audit_search` | Audit log de Purview por usuario y operación | `AuditLog.Read.All` ⚠️ no concedido | `signals` |
+| `insider_mail_search` | Búsqueda en buzón (metadatos; cuerpo opcional) | `Mail.Read` | `mail` |
+| `insider_chat_search` | Búsqueda en chats 1:1 y grupales de Teams | `Chat.ReadWrite.All` | `chat` |
+| `insider_export_evidence` | Exporta mensajes a JSON + SHA-256 | `Mail.Read` | `mail` |
+
+> `AuditLog.Read.All` **no está concedido** en el tenant actual: `insider_audit_search` devolverá un error explicando
+> el permiso que falta. Ejecuta `insider_permissions_check` para ver el estado real antes de prometer una investigación.
 
 ---
 
