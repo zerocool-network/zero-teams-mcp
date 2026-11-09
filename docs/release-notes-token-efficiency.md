@@ -10,6 +10,10 @@
 - `MCP_DEV_MODE=true|1`: diagnósticos seguros (Server log Debug + `responseChars` sin PII/cuerpos). **No relaja** auth/API key, `RestrictedAccessGuard`, denylist ni disclosure.
 - ControlPlane: Swagger/UI solo con `MCP_DEV_MODE` o `Development`.
 
+## Defaults por entorno (fase 2)
+- `MCP_MAIL_DEFAULTS=efficient` (o `1`/`true`): aplica defaults baratos **solo** cuando el cliente no pasa el parámetro — `mail_list_messages.format=triage`, `mail_get_message.bodyFormat=text` y `maxBodyChars=2000`. Sin la variable se mantiene `full`/`html`/`8000` (legacy).
+- Un valor explícito del cliente siempre gana. No afecta a auth/guards/denylist.
+
 ## Compatibilidad
 - Defaults legacy en fase 1 para minimizar roturas; `ServerDisclosurePolicy` instruye params eficientes. Cambio futuro de defaults será versionado.
 

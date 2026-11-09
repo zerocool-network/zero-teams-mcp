@@ -181,7 +181,7 @@
 
 ## 9. Rollout y compatibilidad
 - **Fase 1 (segura):** añadir params nuevos; defaults = **legacy** (`format=full`, `bodyFormat=html`, `maxBodyChars=8000`) + `ServerDisclosurePolicy` instruye usar `triage/text/2000`. Minimiza rotura.
-- **Fase 2 (opt-in):** clientes pasan nuevos params; medir con dev meta/logs.
+- **Fase 2 (opt-in):** clientes pasan nuevos params; medir con dev meta/logs. Alternativa sin tocar clientes: `MCP_MAIL_DEFAULTS=efficient` (defaults `triage`/`text`/2000 solo cuando el cliente no pasa el param).
 - **Fase 3 (breaking, versionada):** cambiar defaults a `compact/text/2000`; anunciar en release notes/ADR; mantener `format=full,bodyFormat=html` como escape.
 - Actualizar `docs/copilot-studio/openapi.yaml` si expone estos tools.
 

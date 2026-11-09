@@ -155,15 +155,15 @@ public sealed class MailDriveTools
     }
 
     [McpServerTool(Name = "mail_get_message")]
-    [Description("ÚNICO tool para abrir un correo ya listado. No uses Outlook ni otro conector. Si hasAttachments es true, el texto del adjunto no viene aquí: usa mail_list_attachments y mail_read_attachment. bodyFormat: text (default legacy fase 1 sigue html por compat; usa text+maxBodyChars para ahorrar tokens), html o none. No envía correo.")]
+    [Description("ÚNICO tool para abrir un correo ya listado. No uses Outlook ni otro conector. Si hasAttachments es true, el texto del adjunto no viene aquí: usa mail_list_attachments y mail_read_attachment. bodyFormat: text (recomendado: ahorra tokens), html o none. Default según MCP_MAIL_DEFAULTS: html (legacy) o text (efficient). No envía correo.")]
     public static async Task<string> GetMessage(
         GraphService graph,
         ILogger<MailDriveTools> logger,
         ClientContext clientContext,
         [Description("Email del buzón.")] string userId,
         [Description("Id del mensaje devuelto por mail_list_messages.")] string messageId,
-        [Description("Opcional. text|html|none. Default html (legacy fase 1).")] string? bodyFormat = null,
-        [Description("Opcional. Máximo de caracteres del cuerpo (0..8000). Default 8000 legacy; usa 2000 con text.")] int? maxBodyChars = null,
+        [Description("Opcional. text|html|none. Default html (legacy) o text (MCP_MAIL_DEFAULTS=efficient).")] string? bodyFormat = null,
+        [Description("Opcional. Máximo de caracteres del cuerpo (0..8000). Default 8000 (legacy) o 2000 (efficient).")] int? maxBodyChars = null,
         [Description("Opcional. true incluye cabeceras/metadatos; default true.")] bool includeHeaders = true,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
@@ -171,7 +171,7 @@ public sealed class MailDriveTools
         var target = clientContext.ResolveTarget(userId) ?? userId;
         if (!TryMailBodyFormat(bodyFormat, out var bfmt, out var bfmtError))
             return JsonSerializer.Serialize(new { Error = "bodyFormat", Message = bfmtError }, CompactJson);
-        var maxChars = maxBodyChars.HasValue ? Math.Clamp(maxBodyChars.Value, 0, 8000) : 8000;
+        var maxChars = maxBodyChars.HasValue ? Math.Clamp(maxBodyChars.Value, 0, 8000) : MailDefaults.MaxBodyChars;
         var jsonOpts = bfmt == MailBodyFormat.Html ? (JsonSerializerOptions?)null : CompactJson;
         return await logger.ExecuteWithLogging("mail_get_message", authenticatedUserId, async () =>
         {
@@ -562,7 +562,7 @@ public sealed class MailDriveTools
     internal static bool TryMailListFormat(string? value, out MailListFormat format, out string? error)
     {
         error = null;
-        format = MailListFormat.Full; // fase 1 legacy default
+        format = MailDefaults.Efficient ? MailListFormat.Triage : MailListFormat.Full;
         if (string.IsNullOrWhiteSpace(value)) return true;
         switch (value.Trim().ToLowerInvariant())
         {
@@ -578,7 +578,7 @@ public sealed class MailDriveTools
     private static bool TryMailBodyFormat(string? value, out MailBodyFormat format, out string? error)
     {
         error = null;
-        format = MailBodyFormat.Html; // fase 1 legacy default
+        format = MailDefaults.Efficient ? MailBodyFormat.Text : MailBodyFormat.Html;
         if (string.IsNullOrWhiteSpace(value)) return true;
         switch (value.Trim().ToLowerInvariant())
         {

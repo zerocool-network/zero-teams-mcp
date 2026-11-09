@@ -64,6 +64,50 @@ public class TokenEfficiencyTests
     }
 
     [Fact]
+    public void MailDefaults_Modes()
+    {
+        Assert.False(MailDefaults.IsEfficient(null));
+        Assert.False(MailDefaults.IsEfficient("legacy"));
+        Assert.False(MailDefaults.IsEfficient("basura"));
+        Assert.True(MailDefaults.IsEfficient("efficient"));
+        Assert.True(MailDefaults.IsEfficient("true"));
+        Assert.True(MailDefaults.IsEfficient("1"));
+        Assert.Equal(2000, MailDefaults.EfficientMaxBodyChars);
+        Assert.Equal(8000, MailDefaults.LegacyMaxBodyChars);
+    }
+
+    [Fact]
+    public void MailFormat_Default_FollowsEnv()
+    {
+        lock (EnvLock)
+        {
+            var prev = Environment.GetEnvironmentVariable(MailDefaults.EnvVar);
+            try
+            {
+                Environment.SetEnvironmentVariable(MailDefaults.EnvVar, null);
+                Assert.True(MailDriveTools.TryMailListFormat(null, out var legacy, out _));
+                Assert.Equal("Full", legacy.ToString());
+                Assert.Equal(8000, MailDefaults.MaxBodyChars);
+
+                Environment.SetEnvironmentVariable(MailDefaults.EnvVar, "efficient");
+                Assert.True(MailDriveTools.TryMailListFormat(null, out var eff, out _));
+                Assert.Equal("Triage", eff.ToString());
+                Assert.Equal(2000, MailDefaults.MaxBodyChars);
+
+                // Un valor explícito sigue ganando al default.
+                Assert.True(MailDriveTools.TryMailListFormat("compact", out var explicitFmt, out _));
+                Assert.Equal("Compact", explicitFmt.ToString());
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(MailDefaults.EnvVar, prev);
+            }
+        }
+    }
+
+    internal static readonly object EnvLock = new();
+
+    [Fact]
     public void MailFields_Whitelist()
     {
         var set = MailDriveTools.ParseMailFields("id,subject,bogus,from");

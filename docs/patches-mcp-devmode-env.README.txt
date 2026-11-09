@@ -3,6 +3,8 @@ Selective docs patches (apply manually; repo has unrelated dirty changes)
 === deploy/.env.example: insert after `TRANSPORT=stdio` ===
 # Dev mode (diagnósticos seguros, SIN relajar auth/guards/denylist)
 # MCP_DEV_MODE=true  # Server: log Debug + responseChars (sin PII). ControlPlane: Swagger habilitado.
+# Defaults de correo (fase 2, opt-in): efficient = triage/text/2000 cuando el cliente no pasa el param.
+# MCP_MAIL_DEFAULTS=efficient
 
 === README.md: add section (suggest near env/config or MCP tools) ===
 ### Dev mode (seguro)
