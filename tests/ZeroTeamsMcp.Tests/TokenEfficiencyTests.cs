@@ -41,6 +41,29 @@ public class TokenEfficiencyTests
     }
 
     [Fact]
+    public void MailSearch_Cursor_Roundtrip()
+    {
+        var c = MailSearchTools.EncodeCursor("ana@x.com", "sent", "2026-10-01", "2026-10-31", "", 50);
+        Assert.DoesNotContain('=', c);
+        var d = MailSearchTools.TryDecodeCursor(c);
+        Assert.NotNull(d);
+        Assert.Equal("ana@x.com", d!.User);
+        Assert.Equal("sent", d.Folder);
+        Assert.Equal("2026-10-01", d.Since);
+        Assert.Equal("2026-10-31", d.Until);
+        Assert.Equal("", d.Query);
+        Assert.Equal(50, d.Skip);
+    }
+
+    [Fact]
+    public void MailSearch_Cursor_Invalid_ReturnsNull()
+    {
+        Assert.Null(MailSearchTools.TryDecodeCursor("no-es-base64!!"));
+        Assert.Null(MailSearchTools.TryDecodeCursor(""));
+        Assert.Null(MailSearchTools.TryDecodeCursor("eyJ4IjoxfQ")); // {"x":1}
+    }
+
+    [Fact]
     public void MailFields_Whitelist()
     {
         var set = MailDriveTools.ParseMailFields("id,subject,bogus,from");

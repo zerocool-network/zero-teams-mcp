@@ -142,6 +142,12 @@
 - **D8** Seguridad: `EnsureUserAsync` + visibilidad por cada buzón/mensaje según aplique; respetar restricted/denylist.
 - **D9** No auto-paginar infinitamente cada búsqueda: máx N páginas por unidad (ej. 2) dentro de `maxCalls`; registrar cursor pendiente en `coverage`.
 
+### 7.2.1 Cursor reanudable (implementado)
+- `coverage[].cursor`: token compacto base64url (`{u,f,s,n,q,k}`) para reanudar por `skip`.
+- Entrada: `cursor` (ignora `userIds/folders/ranges/queries/fromAddress/toAddress/subject`).
+- Solo se emite en unidades **sin `$search`** (filtros/query vacíos); con `$search` Graph no soporta `$skip`, se devuelve `pendingCursor` (nextLink truncado) y `cursor:null`.
+- `nextSuggested[].cursor` permite continuación directa sin reconstruir filtros.
+
 ### 7.3 Errores
 - Validación → `error` + `coverage` parcial si útil.
 

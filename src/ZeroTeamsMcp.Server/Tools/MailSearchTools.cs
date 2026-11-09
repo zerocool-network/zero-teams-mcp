@@ -15,7 +15,7 @@ namespace ZeroTeamsMcp.Server.Tools;
 public sealed class MailSearchTools
 {
     [McpServerTool(Name = "mail_search_hits")]
-    [Description("Búsqueda acotada de correos para investigación cronológica. Acepta varios buzones, carpetas sent/inbox, rangos yyyy-MM-dd y queries. Devuelve hits en formato triage, dedupe por messageId, coverage (done/pending/error) y truncated/nextSuggested. Límites duros: maxHits<=200, maxCalls<=30, máx 10 buzones, 12 rangos, 10 queries. No auto-pagina infinito; reporta pendientes.")]
+    [Description("Búsqueda acotada de correos para investigación cronológica. Acepta varios buzones, carpetas sent/inbox, rangos yyyy-MM-dd y queries. Devuelve hits en formato triage, dedupe por messageId, coverage (done/pending/error) y truncated/nextSuggested. Límites duros: maxHits<=200, maxCalls<=30, máx 10 buzones, 12 rangos, 10 queries. No auto-pagina infinito; reporta pendientes. Para continuar una unidad pendiente, pasa su coverage.cursor en cursor (reanuda por skip; solo unidades sin $search).")]
     public static async Task<string> SearchHits(
         GraphService graph,
         ILogger<MailSearchTools> logger,
@@ -29,17 +29,28 @@ public sealed class MailSearchTools
         [Description("Opcional. Texto en asunto.")] string? subject = null,
         [Description("Opcional. Máx hits (1..200). Default 50.")] int maxHits = 50,
         [Description("Opcional. Máx llamadas Graph/unidades (1..30). Default 12.")] int maxCalls = 12,
+        [Description("Opcional. Cursor de coverage.cursor para reanudar una unidad pendiente (ignora el resto de filtros).")] string? cursor = null,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         maxHits = Math.Clamp(maxHits, 1, 200);
         maxCalls = Math.Clamp(maxCalls, 1, 30);
 
-        var users = SplitList(userIds).Take(10).ToList();
-        var folderList = SplitList(folders).DefaultIfEmpty("sent").Select(NormalizeFolder).Distinct().Take(4).ToList();
+        var resume = TryDecodeCursor(cursor);
+        if (!string.IsNullOrWhiteSpace(cursor) && resume is null)
+            return JsonSerializer.Serialize(new { error = "cursor", message = "cursor inválido" }, MailDriveTools.CompactJson);
+        // Al reanudar se ignoran filtros sueltos: el cursor ya los contiene (o no aplican).
+        var effFrom = resume is null ? fromAddress : null;
+        var effTo = resume is null ? toAddress : null;
+        var effSubject = resume is null ? subject : null;
+
+        var users = resume is null ? SplitList(userIds).Take(10).ToList() : [resume.User];
+        var folderList = resume is null
+            ? SplitList(folders).DefaultIfEmpty("sent").Select(NormalizeFolder).Distinct().Take(4).ToList()
+            : [resume.Folder];
         if (folderList.Count == 0) folderList = ["sent", "inbox"];
-        var rangeList = ParseRanges(ranges).Take(12).ToList();
-        var queryList = SplitList(queries).DefaultIfEmpty("").Take(10).ToList();
+        var rangeList = resume is null ? ParseRanges(ranges).Take(12).ToList() : [(resume.Since, resume.Until, (string?)null)];
+        var queryList = resume is null ? SplitList(queries).DefaultIfEmpty("").Take(10).ToList() : [resume.Query];
         if (users.Count == 0) return JsonSerializer.Serialize(new { error = "userIds", message = "Indica al menos un buzón." }, MailDriveTools.CompactJson);
 
         return await logger.ExecuteWithLogging("mail_search_hits", authenticatedUserId, async () =>
@@ -99,8 +110,12 @@ public sealed class MailSearchTools
 
                             var unitCalls = 0;
                             string? pendingCursor = null;
+                            string? nextCursor = null;
+                            var unitSkip = resume?.Skip ?? 0;
+                            var fetched = 0;
                             var status = "done";
                             string? statusMessage = null;
+                            string? search = null;
                             try
                             {
                                 // D: KQL search acota por fecha; combinamos query/filtros con TrySearch
@@ -109,14 +124,13 @@ public sealed class MailSearchTools
                                     coverage.Add(new { userId = target, folder, since, until, query = q, status = "error", error = "date", message = dateError, callsUsed = 0 });
                                     continue;
                                 }
-                                var hasQueryTerms = !string.IsNullOrWhiteSpace(fromAddress) || !string.IsNullOrWhiteSpace(toAddress)
-                                    || !string.IsNullOrWhiteSpace(q) || !string.IsNullOrWhiteSpace(subject);
+                                var hasQueryTerms = !string.IsNullOrWhiteSpace(effFrom) || !string.IsNullOrWhiteSpace(effTo)
+                                    || !string.IsNullOrWhiteSpace(q) || !string.IsNullOrWhiteSpace(effSubject);
                                 var useSearch = hasQueryTerms;
-                                string? search = null;
                                 if (useSearch)
                                 {
-                                    if (!MailListQuery.TrySearch(since, until, fromAddress, subject, null,
-                                            MailListQuery.SearchDateProperty(folderId), out search, out var searchError, toAddress, q))
+                                    if (!MailListQuery.TrySearch(since, until, effFrom, effSubject, null,
+                                            MailListQuery.SearchDateProperty(folderId), out search, out var searchError, effTo, q))
                                     {
                                         coverage.Add(new { userId = target, folder, since, until, query = q, status = "error", error = "search", message = searchError, callsUsed = 0 });
                                         continue;
@@ -126,14 +140,15 @@ public sealed class MailSearchTools
 
                                 var client = await graph.GetClientAsync(authenticatedUserId);
                                 var current = folderId is null
-                                    ? await client.Users[target].Messages.GetAsync(cfg => { if (!string.IsNullOrEmpty(search)) cfg.Headers.Add("ConsistencyLevel", "eventual"); cfg.QueryParameters.Top = 25; cfg.QueryParameters.Select = ["id", "subject", "from", "toRecipients", "ccRecipients", "receivedDateTime", "sentDateTime", "hasAttachments"]; if (!string.IsNullOrEmpty(search)) cfg.QueryParameters.Search = search; else { cfg.QueryParameters.Orderby = [$"{dateField} desc"]; if (!string.IsNullOrEmpty(filter)) cfg.QueryParameters.Filter = filter; } })
-                                    : await client.Users[target].MailFolders[folderId].Messages.GetAsync(cfg => { if (!string.IsNullOrEmpty(search)) cfg.Headers.Add("ConsistencyLevel", "eventual"); cfg.QueryParameters.Top = 25; cfg.QueryParameters.Select = ["id", "subject", "from", "toRecipients", "ccRecipients", "receivedDateTime", "sentDateTime", "hasAttachments"]; if (!string.IsNullOrEmpty(search)) cfg.QueryParameters.Search = search; else { cfg.QueryParameters.Orderby = [$"{dateField} desc"]; if (!string.IsNullOrEmpty(filter)) cfg.QueryParameters.Filter = filter; } });
+                                    ? await client.Users[target].Messages.GetAsync(cfg => { if (!string.IsNullOrEmpty(search)) cfg.Headers.Add("ConsistencyLevel", "eventual"); cfg.QueryParameters.Top = 25; if (unitSkip > 0 && string.IsNullOrEmpty(search)) cfg.QueryParameters.Skip = unitSkip; cfg.QueryParameters.Select = ["id", "subject", "from", "toRecipients", "ccRecipients", "receivedDateTime", "sentDateTime", "hasAttachments"]; if (!string.IsNullOrEmpty(search)) cfg.QueryParameters.Search = search; else { cfg.QueryParameters.Orderby = [$"{dateField} desc"]; if (!string.IsNullOrEmpty(filter)) cfg.QueryParameters.Filter = filter; } })
+                                    : await client.Users[target].MailFolders[folderId].Messages.GetAsync(cfg => { if (!string.IsNullOrEmpty(search)) cfg.Headers.Add("ConsistencyLevel", "eventual"); cfg.QueryParameters.Top = 25; if (unitSkip > 0 && string.IsNullOrEmpty(search)) cfg.QueryParameters.Skip = unitSkip; cfg.QueryParameters.Select = ["id", "subject", "from", "toRecipients", "ccRecipients", "receivedDateTime", "sentDateTime", "hasAttachments"]; if (!string.IsNullOrEmpty(search)) cfg.QueryParameters.Search = search; else { cfg.QueryParameters.Orderby = [$"{dateField} desc"]; if (!string.IsNullOrEmpty(filter)) cfg.QueryParameters.Filter = filter; } });
                                 callsUsed++; unitCalls++;
                                 var pages = 1;
                                 while (current is not null && pages <= 2)
                                 {
                                     foreach (var m in current.Value ?? [])
                                     {
+                                        fetched++;
                                         if (clientContext.IsRestricted && RestrictedAccessGuard.MailIsHidden(clientContext, m.From?.EmailAddress?.Address, MailDriveTools.Recipients(m.ToRecipients, m.CcRecipients)))
                                             continue;
                                         var key = target + "|" + (m.Id ?? "");
@@ -173,8 +188,15 @@ public sealed class MailSearchTools
                                 statusMessage = ex.Message;
                             }
 
-                            coverage.Add(new { userId = target, folder = folderId ?? "all", since, until, query = q, status, callsUsed = unitCalls, hasMore = status == "pending", pendingCursor, message = statusMessage });
-                            if (status == "pending" || truncated) truncated = true;
+                            if (status == "pending")
+                            {
+                                truncated = true;
+                                // Reanudable por skip solo si la unidad no usa $search.
+                                if (string.IsNullOrEmpty(search))
+                                    nextCursor = EncodeCursor(target, folder, since, until, q, unitSkip + fetched);
+                                pendingCursor = TrimCursor(pendingCursor);
+                            }
+                            coverage.Add(new { userId = target, folder = folderId ?? "all", since, until, query = q, status, callsUsed = unitCalls, hasMore = status == "pending", cursor = nextCursor, pendingCursor, message = statusMessage });
                         }
                         if (callsUsed >= maxCalls || hits.Count >= maxHits) truncated = true;
                     }
@@ -202,7 +224,7 @@ public sealed class MailSearchTools
             }).ToArray();
 
             var nextSuggested = coverage.Where(c => string.Equals((string?)c.GetType().GetProperty("status")?.GetValue(c), "pending", StringComparison.OrdinalIgnoreCase)).Take(10)
-                .Select(c => new { userId = c.GetType().GetProperty("userId")?.GetValue(c), folder = c.GetType().GetProperty("folder")?.GetValue(c), since = c.GetType().GetProperty("since")?.GetValue(c), until = c.GetType().GetProperty("until")?.GetValue(c), query = c.GetType().GetProperty("query")?.GetValue(c) }).ToArray();
+                .Select(c => new { userId = c.GetType().GetProperty("userId")?.GetValue(c), folder = c.GetType().GetProperty("folder")?.GetValue(c), since = c.GetType().GetProperty("since")?.GetValue(c), until = c.GetType().GetProperty("until")?.GetValue(c), query = c.GetType().GetProperty("query")?.GetValue(c), cursor = c.GetType().GetProperty("cursor")?.GetValue(c) }).ToArray();
 
             return (object)new
             {
@@ -235,6 +257,38 @@ public sealed class MailSearchTools
         if (string.IsNullOrEmpty(url)) return null;
         // nextLink can be large; keep enough for debugging but avoid blowing tokens
         return url.Length <= 240 ? url : url[..240] + "...";
+    }
+
+    internal sealed record SearchCursor(string User, string Folder, string? Since, string? Until, string Query, int Skip);
+
+    /// <summary>Cursor compacto y resumible (skip) para una unidad sin $search.</summary>
+    internal static string EncodeCursor(string user, string folder, string? since, string? until, string query, int skip)
+    {
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new { u = user, f = folder, s = since, n = until, q = query, k = skip });
+        return Convert.ToBase64String(payload).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    internal static SearchCursor? TryDecodeCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor)) return null;
+        try
+        {
+            var s = cursor.Replace('-', '+').Replace('_', '/');
+            s = s.PadRight(s.Length + (4 - s.Length % 4) % 4, '=');
+            using var doc = JsonDocument.Parse(Convert.FromBase64String(s));
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            var user = root.TryGetProperty("u", out var u) ? u.GetString() : null;
+            var folder = root.TryGetProperty("f", out var f) ? f.GetString() : null;
+            if (string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(folder)) return null;
+            return new SearchCursor(
+                user!, folder!,
+                root.TryGetProperty("s", out var sinceEl) ? sinceEl.GetString() : null,
+                root.TryGetProperty("n", out var untilEl) ? untilEl.GetString() : null,
+                root.TryGetProperty("q", out var qEl) ? qEl.GetString() ?? "" : "",
+                root.TryGetProperty("k", out var kEl) && kEl.TryGetInt32(out var k) ? Math.Max(0, k) : 0);
+        }
+        catch { return null; }
     }
 
     internal static List<(string? Since, string? Until, string? Error)> ParseRanges(string ranges)
