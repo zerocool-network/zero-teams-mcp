@@ -1,0 +1,23 @@
+# MCP de investigación interna — imagen separada a propósito.
+#
+# No se construye junto al MCP de Teams: binario, credenciales y endpoint
+# distintos. Un fallo en el servidor público no debe heredar Mail.Read.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY src/ZeroTeamsMcp.Core/ src/ZeroTeamsMcp.Core/
+COPY src/ZeroTeamsMcp.Insider/ src/ZeroTeamsMcp.Insider/
+RUN dotnet restore src/ZeroTeamsMcp.Insider/ZeroTeamsMcp.Insider.csproj
+RUN dotnet publish src/ZeroTeamsMcp.Insider/ZeroTeamsMcp.Insider.csproj -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser \
+    && mkdir -p /data/exports && chown -R appuser:appgroup /data
+
+USER appuser
+
+COPY --from=build /app/publish .
+EXPOSE 5300
+
+ENTRYPOINT ["dotnet", "ZeroTeamsMcp.Insider.dll"]

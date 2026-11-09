@@ -3,6 +3,7 @@
     <Project Path="src/ZeroTeamsMcp.Bot/ZeroTeamsMcp.Bot.csproj" />
     <Project Path="src/ZeroTeamsMcp.Cli/ZeroTeamsMcp.Cli.csproj" />
     <Project Path="src/ZeroTeamsMcp.ControlPlane/ZeroTeamsMcp.ControlPlane.csproj" />
+    <Project Path="src/ZeroTeamsMcp.Insider/ZeroTeamsMcp.Insider.csproj" />
     <Project Path="src/ZeroTeamsMcp.Core/ZeroTeamsMcp.Core.csproj" />
     <Project Path="src/ZeroTeamsMcp.Server/ZeroTeamsMcp.Server.csproj" />
   </Folder>

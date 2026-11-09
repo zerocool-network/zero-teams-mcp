@@ -53,5 +53,34 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # MCP de investigación. Servicio aparte, credenciales aparte, sin puerto público.
+  #
+  # No expone `ports:` a propósito: solo es alcanzable dentro de la red de compose.
+  # Para acceso remoto, publica a través de un reverse proxy con IP allowlist DESPUÉS
+  # de haber aplicado la Application Access Policy de Exchange (ver docs/INSIDER_TOOLS.md).
+  mcp-insider:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.insider
+    environment:
+      - INSIDER_AZURE_TENANT_ID=${INSIDER_AZURE_TENANT_ID}
+      - INSIDER_AZURE_CLIENT_ID=${INSIDER_AZURE_CLIENT_ID}
+      - INSIDER_AZURE_CLIENT_SECRET=${INSIDER_AZURE_CLIENT_SECRET}
+      - TRANSPORT=http
+      - INSIDER_BIND=http://0.0.0.0:5300
+      - INSIDER_KEYS=${INSIDER_KEYS}
+      - INSIDER_APPROVER_TOKEN=${INSIDER_APPROVER_TOKEN}
+      - INSIDER_ORG_DOMAINS=${INSIDER_ORG_DOMAINS}
+      - INSIDER_TOOLS=${INSIDER_TOOLS:-off}
+      - INSIDER_ALLOWED_IPS=${INSIDER_ALLOWED_IPS}
+      - INSIDER_DB_PATH=/data/insider.db
+      - INSIDER_EXPORT_DIR=/data/exports
+    expose:
+      - "5300"
+    volumes:
+      - insider-data:/data
+    restart: unless-stopped
+
 volumes:
   controlplane-data:
+  insider-data:

@@ -36,6 +36,9 @@ Thumbs.db
 ## Secrets
 appsettings.Development.json
 
+## Datos locales del módulo insider (casos, auditoría, exportaciones)
+data/
+
 ## Docs internos (no público)
 docs/credenciales.md
 docs/MEJORAS_POST_FORENSIC.md
