@@ -11,6 +11,7 @@ using Microsoft.Graph.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -63,6 +64,7 @@ public sealed class TeamsVideoTools
     public static async Task<IList<ContentBlock>> GetVideoDescription(
         GraphService graph,
         ILogger<TeamsVideoTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat.")] string chatId,
         [Description("ID del mensaje que contiene el vídeo.")] string messageId,
         [Description("Opcional. Índice del vídeo si el mensaje tiene varios (0-based). Default: 0.")] int index = 0,
@@ -71,6 +73,8 @@ public sealed class TeamsVideoTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithContentLogging<IList<ContentBlock>>("teams_get_video_description", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureChatAsync(
+                graph, clientContext, "teams_get_video_description", chatId, authenticatedUserId);
             var attempts = new List<object>();
             var client = await graph.GetClientAsync(authenticatedUserId);
 

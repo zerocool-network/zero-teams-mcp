@@ -9,6 +9,7 @@ using Microsoft.Graph.Models;
 using Microsoft.Kiota.Abstractions;
 using ModelContextProtocol.Server;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -30,6 +31,7 @@ public sealed class TeamsVoiceTools
     public static async Task<string> GetVoiceMessageText(
         GraphService graph,
         ILogger<TeamsVoiceTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat.")] string chatId,
         [Description("ID del mensaje que contiene la nota de voz.")] string messageId,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
@@ -37,6 +39,8 @@ public sealed class TeamsVoiceTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithLogging<object>("teams_get_voice_message_text", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureChatAsync(
+                graph, clientContext, "teams_get_voice_message_text", chatId, authenticatedUserId);
             var cacheKey = $"{chatId}|{messageId}";
             if (Cache.TryGetValue(cacheKey, out var hit))
             {

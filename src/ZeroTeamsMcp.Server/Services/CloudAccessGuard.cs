@@ -75,7 +75,7 @@ public static class CloudAccessGuard
     {
         ArgumentNullException.ThrowIfNull(ctx);
 
-        if (!ctx.IsCloud || ctx.IsAdmin)
+        if (!ctx.IsCloud || ctx.IsAdmin || ctx.IsRestricted)
             return;
 
         ArgumentNullException.ThrowIfNull(graph);

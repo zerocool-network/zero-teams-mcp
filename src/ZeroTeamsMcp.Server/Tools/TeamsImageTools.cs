@@ -9,6 +9,7 @@ using Microsoft.Graph.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -71,6 +72,7 @@ public sealed class TeamsImageTools
     public static async Task<string> ListChatImages(
         GraphService graph,
         ILogger<TeamsImageTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat.")] string chatId,
         [Description("Opcional. CSV de nombres de remitente a incluir (substring, insensible a mayúsculas). Ej: 'Fran,Noe,Luis,Miguel,Maruan'.")] string? fromNames = null,
         [Description("Opcional. Fecha ISO (yyyy-MM-dd): solo mensajes desde esa fecha.")] string? sinceDate = null,
@@ -81,6 +83,8 @@ public sealed class TeamsImageTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithLogging("teams_list_chat_images", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureChatAsync(
+                graph, clientContext, "teams_list_chat_images", chatId, authenticatedUserId);
             var names = SplitNames(fromNames);
             DateTimeOffset? since = string.IsNullOrWhiteSpace(sinceDate)
                 ? null
@@ -248,6 +252,7 @@ public sealed class TeamsImageTools
     public static async Task<IList<ContentBlock>> GetImageDescription(
         GraphService graph,
         ILogger<TeamsImageTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat.")] string chatId,
         [Description("ID del mensaje que contiene la imagen.")] string messageId,
         [Description("Opcional. Índice de la imagen si el mensaje tiene varias (0-based). Default: 0.")] int index = 0,
@@ -256,6 +261,8 @@ public sealed class TeamsImageTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithContentLogging<IList<ContentBlock>>("teams_get_image_description", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureChatAsync(
+                graph, clientContext, "teams_get_image_description", chatId, authenticatedUserId);
             var attempts = new List<object>();
             var client = await graph.GetClientAsync(authenticatedUserId);
 

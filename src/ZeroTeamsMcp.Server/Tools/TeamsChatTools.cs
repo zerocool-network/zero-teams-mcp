@@ -35,20 +35,44 @@ public sealed class TeamsChatTools
 
         return await logger.ExecuteWithLogging("teams_list_chats", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureUserAsync(
+                graph, clientContext, "teams_list_chats", targetUserId, authenticatedUserId);
+
             var client = await graph.GetClientAsync(authenticatedUserId);
             var result = await client.Users[targetUserId].Chats.GetAsync(cfg =>
             {
                 cfg.QueryParameters.Top = top;
             });
 
-            return result?.Value?.Select(c => new
+            var chats = result?.Value?.ToList() ?? [];
+            if (clientContext.IsRestricted)
+            {
+                var visible = new List<Microsoft.Graph.Models.Chat>();
+                foreach (var chat in chats)
+                {
+                    if (string.IsNullOrWhiteSpace(chat.Id)) continue;
+                    try
+                    {
+                        await RestrictedAccessGuard.EnsureChatAsync(
+                            graph, clientContext, "teams_list_chats", chat.Id, authenticatedUserId);
+                        visible.Add(chat);
+                    }
+                    catch (ModelContextProtocol.McpException)
+                    {
+                        // Chat con cuenta excluida, o miembros no verificables.
+                    }
+                }
+                chats = visible;
+            }
+
+            return chats.Select(c => new
             {
                 c.Id,
                 Topic = c.Topic,
                 ChatType = c.ChatType?.ToString(),
                 c.WebUrl,
                 c.CreatedDateTime
-            }) ?? [];
+            });
         });
     }
 
@@ -156,8 +180,9 @@ public sealed class TeamsChatTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithLogging("teams_get_chat_messages", authenticatedUserId, async () =>
         {
-            // Cliente regular: solo puede leer chats de los que es miembro.
             await CloudAccessGuard.EnsureChatMemberAsync(
+                graph, clientContext, "teams_get_chat_messages", chatId, authenticatedUserId);
+            await RestrictedAccessGuard.EnsureChatAsync(
                 graph, clientContext, "teams_get_chat_messages", chatId, authenticatedUserId);
 
             var client = await graph.GetClientAsync(authenticatedUserId);

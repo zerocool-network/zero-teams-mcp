@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using Microsoft.Graph;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -21,6 +22,7 @@ public sealed class TeamsListTeamsTool
     public static async Task<string> Execute(
         GraphService graph,
         ILogger<TeamsListTeamsTool> logger,
+        ClientContext clientContext,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
@@ -28,7 +30,13 @@ public sealed class TeamsListTeamsTool
         {
             var client = await graph.GetClientAsync(authenticatedUserId);
             var teams = await client.Teams.GetAsync();
-            return teams?.Value?.Select(t => new { t.Id, t.DisplayName, t.Description }) ?? [];
+            var visible = RestrictedAccessGuard.FilterTeams(
+                clientContext,
+                "teams_list_teams",
+                teams?.Value ?? [],
+                t => t.DisplayName,
+                t => t.Id);
+            return visible.Select(t => new { t.Id, t.DisplayName, t.Description });
         });
     }
 }

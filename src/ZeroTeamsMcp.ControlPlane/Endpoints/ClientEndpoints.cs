@@ -35,14 +35,32 @@ public static class ClientEndpoints
                 return Results.Unauthorized();
 
             var isAdmin = body.Admin == true;
-            if (!isAdmin)
+            var isRestricted = body.Restricted == true;
+            if (isAdmin && isRestricted)
+                return Results.BadRequest(new { error = "admin and restricted are mutually exclusive" });
+
+            string email;
+            string role;
+            if (isAdmin)
+            {
+                email = "*";
+                role = ClientRoles.Admin;
+            }
+            else if (isRestricted)
+            {
+                email = ClientRoles.RestrictedEmail;
+                role = ClientRoles.Restricted;
+            }
+            else
             {
                 if (string.IsNullOrWhiteSpace(body.Email) || !EmailRegex.IsMatch(body.Email.Trim()))
                     return Results.BadRequest(new { error = "email required and must be valid" });
+                email = body.Email.Trim().ToLowerInvariant();
+                role = ClientRoles.Client;
             }
 
-            var email = isAdmin ? "*" : body.Email!.Trim().ToLowerInvariant();
-            var (apiKey, prefix) = await store.RegisterAsync(email, isAdmin);
+            var (apiKey, prefix) = await store.RegisterWithRoleAsync(email, role);
+            isAdmin = ClientRoles.IsAdmin(role);
 
             var mcpUrl = Environment.GetEnvironmentVariable("MCP_SERVER_URL")
                 ?? "http://localhost:5200/mcp";
@@ -52,6 +70,7 @@ public static class ClientEndpoints
                 ApiKey = apiKey,
                 Email = email,
                 IsAdmin = isAdmin,
+                Role = role,
                 KeyPrefix = prefix,
                 ServerUrl = mcpUrl
             });
@@ -67,6 +86,7 @@ public static class ClientEndpoints
             {
                 client.Email,
                 client.IsAdmin,
+                client.Role,
                 client.KeyPrefix
             });
         });
@@ -81,6 +101,7 @@ public static class ClientEndpoints
                 c.KeyPrefix,
                 c.Email,
                 c.IsAdmin,
+                c.Role,
                 c.Revoked,
                 c.CreatedAt,
                 c.LastUsedAt
@@ -103,5 +124,6 @@ public static class ClientEndpoints
         public string? Email { get; init; }
         public string? AdminToken { get; init; }
         public bool? Admin { get; init; }
+        public bool? Restricted { get; init; }
     }
 }

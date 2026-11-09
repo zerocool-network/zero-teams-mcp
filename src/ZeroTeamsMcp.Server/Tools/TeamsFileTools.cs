@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using DocumentFormat.OpenXml.Packaging;
@@ -13,6 +14,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using UglyToad.PdfPig;
 using ZeroTeamsMcp.Core.Graph;
+using ZeroTeamsMcp.Server.Services;
 
 namespace ZeroTeamsMcp.Server.Tools;
 
@@ -37,7 +39,7 @@ public sealed class TeamsFileTools
     private static readonly LruByteCache Cache = new(MaxCacheBytes);
 
     private static readonly string[] DocumentExtensions =
-        [".pdf", ".docx", ".xlsx", ".pptx", ".txt", ".csv", ".md", ".json", ".log"];
+        [".pdf", ".docx", ".xlsx", ".pptx", ".txt", ".csv", ".md", ".json", ".log", ".patch", ".diff"];
 
     private static readonly string[] MediaExtensions =
         [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff",
@@ -61,12 +63,12 @@ public sealed class TeamsFileTools
     private const int MaxXlsxCells = 20_000;
 
     // Recapara el bloque de texto devuelto para no ahogar al modelo.
-    private const int MaxOutputChars = 120_000;
+    private const int MaxOutputChars = 600_000;
     private const int ProcessTimeoutMs = 120_000;
 
     // Límites del manejo de ZIP: entradas listadas, documentos con texto extraído y bytes por entrada (anti-bomba).
     private const int MaxZipEntries = 300;
-    private const int MaxZipTextDocs = 25;
+    private const int MaxZipTextDocs = 60;
     private const long MaxZipFileBytes = 8 * 1024 * 1024;
 
     private static readonly string[] PdfPageExts = { ".pdf" };
@@ -94,6 +96,7 @@ public sealed class TeamsFileTools
     public static async Task<IList<ContentBlock>> GetFileContent(
         GraphService graph,
         ILogger<TeamsFileTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat.")] string chatId,
         [Description("ID del mensaje que contiene el fichero.")] string messageId,
         [Description("Opcional. Índice del fichero si el mensaje tiene varios (0-based). Default: 0.")] int index = 0,
@@ -102,6 +105,8 @@ public sealed class TeamsFileTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithContentLogging<IList<ContentBlock>>("teams_get_file_content", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureChatAsync(
+                graph, clientContext, "teams_get_file_content", chatId, authenticatedUserId);
             var attempts = new List<object>();
             var client = await graph.GetClientAsync(authenticatedUserId);
 
@@ -138,6 +143,8 @@ public sealed class TeamsFileTools
             }
 
             var candidate = candidates[index];
+            await RestrictedAccessGuard.EnsureFileOwnerAsync(
+                graph, clientContext, "teams_get_file_content", candidate.Url, authenticatedUserId);
             var cacheKey = $"{chatId}|{messageId}|{candidate.Url ?? candidate.Name}";
             var cached = Cache.TryGet(cacheKey, out var file);
 
@@ -176,6 +183,7 @@ public sealed class TeamsFileTools
     public static async Task<IList<ContentBlock>> ListFileCandidates(
         GraphService graph,
         ILogger<TeamsFileTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat.")] string chatId,
         [Description("ID del mensaje cuyos adjuntos listar.")] string messageId,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
@@ -183,6 +191,8 @@ public sealed class TeamsFileTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithContentLogging<IList<ContentBlock>>("teams_list_file_candidates", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureChatAsync(
+                graph, clientContext, "teams_list_file_candidates", chatId, authenticatedUserId);
             var attempts = new List<object>();
             var client = await graph.GetClientAsync(authenticatedUserId);
 
@@ -600,7 +610,11 @@ public static async Task<List<byte[]>> RenderPdfPagesAsync(byte[] bytes)
 
         var textDocs = 0;
         var skipped = 0;
-        foreach (var entry in archive.Entries)
+        // .md primero: los paquetes de specs/documentación no deben perder cupo frente a datos .json/.csv grandes.
+        var orderedEntries = archive.Entries
+            .OrderBy(e => string.Equals(ExtensionOf(e.FullName), ".md", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(e => e.Length);
+        foreach (var entry in orderedEntries)
         {
             if (entry.FullName.EndsWith("/", StringComparison.Ordinal)) continue;      // directorio
             if (!DocumentExtensions.Contains(ExtensionOf(entry.FullName), StringComparer.OrdinalIgnoreCase)) continue;

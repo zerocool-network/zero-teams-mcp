@@ -36,10 +36,14 @@ public sealed class CloudAuthService
                 var result = await response.Content.ReadFromJsonAsync<ValidateResponse>(cancellationToken: ct);
                 if (result is not null)
                 {
+                    var role = string.IsNullOrWhiteSpace(result.Role)
+                        ? (result.IsAdmin ? "admin" : "client")
+                        : result.Role.Trim().ToLowerInvariant();
                     identity = new ClientIdentity
                     {
                         Email = result.Email ?? "",
-                        IsAdmin = result.IsAdmin
+                        IsAdmin = role == "admin",
+                        Role = role
                     };
                 }
             }
@@ -58,6 +62,7 @@ public sealed class CloudAuthService
     {
         public string? Email { get; set; }
         public bool IsAdmin { get; set; }
+        public string? Role { get; set; }
         public string? KeyPrefix { get; set; }
     }
 }

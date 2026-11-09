@@ -36,6 +36,33 @@ public class ClientStoreKeyTests : IDisposable
         Assert.Equal(prefix, found.KeyPrefix);
         Assert.Equal(apiKey, found.ApiKey);
         Assert.False(found.IsAdmin);
+        Assert.Equal("client", found.Role);
+    }
+
+    [Fact]
+    public async Task RegisterAdmin_GuardaRolAdmin()
+    {
+        var (apiKey, _) = await _store.RegisterAsync("ignorado@example.com", isAdmin: true);
+
+        var client = await _store.ValidateAsync(apiKey);
+
+        Assert.NotNull(client);
+        Assert.True(client!.IsAdmin);
+        Assert.Equal("admin", client.Role);
+        Assert.Equal("*", client.Email);
+    }
+
+    [Fact]
+    public async Task RegisterRestricted_NoEsAdmin_YEmailCentinela()
+    {
+        var (apiKey, _) = await _store.RegisterWithRoleAsync("nadie@example.com", "restricted");
+
+        var client = await _store.ValidateAsync(apiKey);
+
+        Assert.NotNull(client);
+        Assert.False(client!.IsAdmin);
+        Assert.Equal("restricted", client.Role);
+        Assert.Equal("restricted", client.Email);
     }
 
     [Fact]

@@ -11,6 +11,7 @@ public sealed class RegisteredClient
 {
     public string Email { get; init; } = "";
     public bool IsAdmin { get; init; }
+    public string Role { get; init; } = ClientRoles.Client;
     public string KeyPrefix { get; init; } = "";
     public DateTime CreatedAt { get; init; }
     public bool Revoked { get; init; }
@@ -82,6 +83,20 @@ public sealed class ClientStore
                 try { alt.ExecuteNonQuery(); }
                 catch (Microsoft.Data.Sqlite.SqliteException) { /* columna ya existe */ }
             }
+            using (var roleCol = conn.CreateCommand())
+            {
+                roleCol.CommandText = "ALTER TABLE clients ADD COLUMN role TEXT";
+                try { roleCol.ExecuteNonQuery(); }
+                catch (Microsoft.Data.Sqlite.SqliteException) { /* columna ya existe */ }
+            }
+            using (var backfill = conn.CreateCommand())
+            {
+                backfill.CommandText = @"
+                    UPDATE clients
+                    SET role = CASE WHEN is_admin = 1 THEN 'admin' ELSE 'client' END
+                    WHERE role IS NULL OR role = ''";
+                backfill.ExecuteNonQuery();
+            }
             _initialized = true;
         }
         finally { _initLock.Release(); }
@@ -115,12 +130,30 @@ public sealed class ClientStore
     /// <summary>
     /// Registra un cliente y devuelve la API key en texto plano (solo esta vez).
     /// </summary>
-    public async Task<(string ApiKey, string KeyPrefix)> RegisterAsync(
+    public Task<(string ApiKey, string KeyPrefix)> RegisterAsync(
         string email,
         bool isAdmin,
         CancellationToken ct = default)
+        => RegisterWithRoleAsync(email, isAdmin ? ClientRoles.Admin : ClientRoles.Client, ct);
+
+    /// <summary>
+    /// Registra admin (<c>*</c>), cliente (su email) o restricted (centinela
+    /// <see cref="ClientRoles.RestrictedEmail"/>). La key en claro sale una sola vez.
+    /// </summary>
+    public async Task<(string ApiKey, string KeyPrefix)> RegisterWithRoleAsync(
+        string email,
+        string role,
+        CancellationToken ct = default)
     {
         EnsureInitialized();
+        var normalized = role.Trim().ToLowerInvariant();
+        var isAdmin = ClientRoles.IsAdmin(normalized);
+        var storedEmail = normalized switch
+        {
+            ClientRoles.Admin => "*",
+            ClientRoles.Restricted => ClientRoles.RestrictedEmail,
+            _ => email.Trim().ToLowerInvariant()
+        };
         var key = GenerateKey();
         var hash = HashKey(key);
         var prefix = key[..10];
@@ -128,14 +161,15 @@ public sealed class ClientStore
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO clients (key_hash, key_prefix, email, is_admin, revoked, created_at, key_encrypted)
-            VALUES (@h, @p, @e, @a, 0, @c, @k)";
+            INSERT INTO clients (key_hash, key_prefix, email, is_admin, revoked, created_at, key_encrypted, role)
+            VALUES (@h, @p, @e, @a, 0, @c, @k, @r)";
         cmd.Parameters.AddWithValue("@h", hash);
         cmd.Parameters.AddWithValue("@p", prefix);
-        cmd.Parameters.AddWithValue("@e", isAdmin ? "*" : email);
+        cmd.Parameters.AddWithValue("@e", storedEmail);
         cmd.Parameters.AddWithValue("@a", isAdmin ? 1 : 0);
         cmd.Parameters.AddWithValue("@c", DateTime.UtcNow.ToString("O"));
         cmd.Parameters.AddWithValue("@k", (object?)_cipher?.Encrypt(key) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@r", isAdmin ? ClientRoles.Admin : normalized == ClientRoles.Restricted ? ClientRoles.Restricted : ClientRoles.Client);
         cmd.ExecuteNonQuery();
         return (key, prefix);
     }
@@ -151,7 +185,7 @@ public sealed class ClientStore
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            SELECT key_prefix, email, is_admin, revoked, created_at, last_used_at, key_encrypted
+            SELECT key_prefix, email, is_admin, revoked, created_at, last_used_at, key_encrypted, role
             FROM clients
             WHERE email = @e AND revoked = 0
             ORDER BY created_at DESC
@@ -163,7 +197,8 @@ public sealed class ClientStore
         {
             KeyPrefix = reader.GetString(0),
             Email = reader.GetString(1),
-            IsAdmin = reader.GetInt32(2) == 1,
+            IsAdmin = ReadRole(reader, 7, reader.GetInt32(2) == 1) == ClientRoles.Admin,
+            Role = ReadRole(reader, 7, reader.GetInt32(2) == 1),
             Revoked = reader.GetInt32(3) == 1,
             CreatedAt = DateTime.Parse(reader.GetString(4)),
             LastUsedAt = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5)),
@@ -182,7 +217,7 @@ public sealed class ClientStore
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            SELECT key_prefix, email, is_admin, revoked, created_at, last_used_at
+            SELECT key_prefix, email, is_admin, revoked, created_at, last_used_at, role
             FROM clients WHERE key_hash = @h";
         cmd.Parameters.AddWithValue("@h", hash);
         RegisteredClient? client = null;
@@ -193,7 +228,8 @@ public sealed class ClientStore
             {
                 KeyPrefix = reader.GetString(0),
                 Email = reader.GetString(1),
-                IsAdmin = reader.GetInt32(2) == 1,
+                IsAdmin = ReadRole(reader, 6, reader.GetInt32(2) == 1) == ClientRoles.Admin,
+                Role = ReadRole(reader, 6, reader.GetInt32(2) == 1),
                 Revoked = reader.GetInt32(3) == 1,
                 CreatedAt = DateTime.Parse(reader.GetString(4)),
                 LastUsedAt = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5))
@@ -219,7 +255,7 @@ public sealed class ClientStore
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            SELECT key_prefix, email, is_admin, revoked, created_at, last_used_at
+            SELECT key_prefix, email, is_admin, revoked, created_at, last_used_at, role
             FROM clients ORDER BY created_at";
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
@@ -228,13 +264,24 @@ public sealed class ClientStore
             {
                 KeyPrefix = reader.GetString(0),
                 Email = reader.GetString(1),
-                IsAdmin = reader.GetInt32(2) == 1,
+                IsAdmin = ReadRole(reader, 6, reader.GetInt32(2) == 1) == ClientRoles.Admin,
+                Role = ReadRole(reader, 6, reader.GetInt32(2) == 1),
                 Revoked = reader.GetInt32(3) == 1,
                 CreatedAt = DateTime.Parse(reader.GetString(4)),
                 LastUsedAt = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5))
             });
         }
         return clients;
+    }
+
+    private static string ReadRole(SqliteDataReader reader, int ordinal, bool isAdminColumn)
+    {
+        if (reader.IsDBNull(ordinal))
+            return isAdminColumn ? ClientRoles.Admin : ClientRoles.Client;
+        var role = reader.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(role))
+            return isAdminColumn ? ClientRoles.Admin : ClientRoles.Client;
+        return role.Trim().ToLowerInvariant();
     }
 
     /// <summary>

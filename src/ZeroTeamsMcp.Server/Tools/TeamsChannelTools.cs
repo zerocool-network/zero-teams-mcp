@@ -23,6 +23,7 @@ public sealed class TeamsChannelTools
     public static async Task<string> ListChannels(
         GraphService graph,
         ILogger<TeamsChannelTools> logger,
+        ClientContext clientContext,
         [Description("ID del team (UUID).")] string teamId,
         [Description("Opcional. Skip para paginación.")] int skip = 0,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
@@ -30,6 +31,8 @@ public sealed class TeamsChannelTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithLogging("teams_list_channels", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureTeamAsync(
+                graph, clientContext, "teams_list_channels", teamId, authenticatedUserId);
             var client = await graph.GetClientAsync(authenticatedUserId);
             var result = await client.Teams[teamId].Channels.GetAsync();
 

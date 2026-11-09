@@ -10,6 +10,10 @@ public sealed class ClientIdentity
 {
     public string Email { get; init; } = "";
     public bool IsAdmin { get; init; }
+    public string Role { get; init; } = "";
+
+    public bool IsRestricted =>
+        string.Equals(Role, "restricted", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
@@ -33,6 +37,7 @@ public sealed class ClientContext
 
     public bool IsCloud => Identity is not null;
     public bool IsAdmin => Identity?.IsAdmin == true;
+    public bool IsRestricted => Identity?.IsRestricted == true;
     public string? Email => Identity?.Email;
 
     /// <summary>
@@ -45,15 +50,25 @@ public sealed class ClientContext
     {
         var identity = Identity;
         if (identity is null)
-            return requestedUserId;
-
-        if (identity.IsAdmin)
         {
             if (!string.IsNullOrWhiteSpace(requestedUserId))
                 return requestedUserId;
 
-            // Compatibilidad: cliente no envía userId. Usar email real si lo tenemos, sino fallback env/default.
-            if (!string.IsNullOrWhiteSpace(identity.Email) && identity.Email != "*")
+            var fallback = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_USER")
+                ?? Environment.GetEnvironmentVariable("ADMIN_EMAIL")
+                ?? Environment.GetEnvironmentVariable("DEFAULT_USER_ID");
+            return !string.IsNullOrWhiteSpace(fallback) ? fallback.Trim() : requestedUserId;
+        }
+
+        if (identity.IsAdmin || identity.IsRestricted)
+        {
+            if (!string.IsNullOrWhiteSpace(requestedUserId))
+                return requestedUserId;
+
+            // Compatibilidad: cliente no envía userId. El centinela restricted no es un buzón.
+            if (!identity.IsRestricted &&
+                !string.IsNullOrWhiteSpace(identity.Email) &&
+                identity.Email != "*")
                 return identity.Email;
 
             var adminDefault = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_USER") 

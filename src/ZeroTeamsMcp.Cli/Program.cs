@@ -114,17 +114,23 @@ deleteCmd.SetHandler(async (tenantId, baseUrl) =>
 // --- register command (cloud) ---
 // El registro exige siempre ADMIN_TOKEN (por defecto lo lee de la env ADMIN_TOKEN):
 // con registro abierto cualquiera podía registrarse como cualquier email y leer sus chats.
-var registerEmailOpt = new Option<string?>("--email", "Email del usuario Teams (obligatorio salvo --admin)");
+var registerEmailOpt = new Option<string?>("--email", "Email del usuario Teams (obligatorio salvo --admin o --restricted)");
 var registerAdminTokenOpt = new Option<string?>("--admin-token", () => Environment.GetEnvironmentVariable("ADMIN_TOKEN"), "ADMIN_TOKEN del ControlPlane (por defecto: env ADMIN_TOKEN)");
-var registerAdminOpt = new Option<bool>("--admin", () => false, "Registrar como cliente admin (wildcard *). Ignora --email.");
+var registerAdminOpt = new Option<bool>("--admin", () => false, "Registrar como cliente admin (wildcard *). Ignora --email. Sin denylist.");
+var registerRestrictedOpt = new Option<bool>("--restricted", () => false, "Registrar key de lectura con denylist. Incompatible con --admin.");
 var registerCmd = new Command("register", "Registrar un cliente remoto en el cloud y obtener su API key")
 {
-    registerEmailOpt, registerAdminTokenOpt, registerAdminOpt, baseUrlOpt
+    registerEmailOpt, registerAdminTokenOpt, registerAdminOpt, registerRestrictedOpt, baseUrlOpt
 };
-registerCmd.SetHandler(async (email, adminToken, admin, baseUrl) =>
+registerCmd.SetHandler(async (email, adminToken, admin, restricted, baseUrl) =>
 {
+    if (admin && restricted)
+    {
+        Console.Error.WriteLine("Error: --admin y --restricted son excluyentes.");
+        return;
+    }
     using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
-    var resp = await http.PostAsJsonAsync("/api/clients/register", new { Email = email, AdminToken = adminToken, Admin = admin });
+    var resp = await http.PostAsJsonAsync("/api/clients/register", new { Email = email, AdminToken = adminToken, Admin = admin, Restricted = restricted });
     if (!resp.IsSuccessStatusCode)
     {
         var err = await resp.Content.ReadAsStringAsync();
@@ -136,8 +142,11 @@ registerCmd.SetHandler(async (email, adminToken, admin, baseUrl) =>
     var serverUrl = r.GetProperty("serverUrl").GetString() ?? "";
     var regEmail = r.GetProperty("email").GetString() ?? "";
     var isAdmin = r.GetProperty("isAdmin").GetBoolean();
-    Console.WriteLine($"Cliente registrado{(isAdmin ? " (ADMIN)" : "")}:");
+    var role = r.TryGetProperty("role", out var roleEl) ? roleEl.GetString() ?? "" : "";
+    var label = isAdmin ? " (ADMIN)" : role == "restricted" ? " (RESTRINGIDA)" : "";
+    Console.WriteLine($"Cliente registrado{label}:");
     Console.WriteLine($"  Email   : {regEmail}");
+    Console.WriteLine($"  Rol     : {(string.IsNullOrEmpty(role) ? (isAdmin ? "admin" : "client") : role)}");
     Console.WriteLine($"  API Key : {apiKey}");
     Console.WriteLine("  (guárdala — no se vuelve a mostrar)");
     Console.WriteLine();
@@ -154,7 +163,7 @@ registerCmd.SetHandler(async (email, adminToken, admin, baseUrl) =>
         }
     };
     Console.WriteLine(JsonSerializer.Serialize(cfg, new JsonSerializerOptions { WriteIndented = true }));
-}, registerEmailOpt, registerAdminTokenOpt, registerAdminOpt, baseUrlOpt);
+}, registerEmailOpt, registerAdminTokenOpt, registerAdminOpt, registerRestrictedOpt, baseUrlOpt);
 
 // --- test command ---
 var mcpUrlOpt = new Option<string>("--mcp-url", () => "http://localhost:5200", "MCP Server URL");

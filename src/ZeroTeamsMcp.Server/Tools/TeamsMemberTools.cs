@@ -23,12 +23,15 @@ public sealed class TeamsMemberTools
     public static async Task<string> GetChatMembers(
         GraphService graph,
         ILogger<TeamsMemberTools> logger,
+        ClientContext clientContext,
         [Description("ID del chat (UUID).")] string chatId,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
     {
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithLogging("teams_get_chat_members", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureChatAsync(
+                graph, clientContext, "teams_get_chat_members", chatId, authenticatedUserId);
             var client = await graph.GetClientAsync(authenticatedUserId);
             var result = await client.Chats[chatId].Members.GetAsync();
 
@@ -107,6 +110,7 @@ public sealed class TeamsMemberTools
     public static async Task<string> GetChannelMembers(
         GraphService graph,
         ILogger<TeamsMemberTools> logger,
+        ClientContext clientContext,
         [Description("ID del team (UUID).")] string teamId,
         [Description("ID del canal (UUID).")] string channelId,
         [Description("Opcional. ID del usuario autenticado para auth delegada.")] string? authenticatedUserId = null)
@@ -114,15 +118,28 @@ public sealed class TeamsMemberTools
         AuthenticatedUserIdValidator.Validate(authenticatedUserId);
         return await logger.ExecuteWithLogging("teams_get_channel_members", authenticatedUserId, async () =>
         {
+            await RestrictedAccessGuard.EnsureTeamAsync(
+                graph, clientContext, "teams_get_channel_members", teamId, authenticatedUserId);
             var client = await graph.GetClientAsync(authenticatedUserId);
             var result = await client.Teams[teamId].Channels[channelId].Members.GetAsync();
+            var members = result?.Value?.ToList() ?? [];
+            if (clientContext.IsRestricted)
+            {
+                var visible = new List<ConversationMember>();
+                foreach (var member in members)
+                {
+                    if (await RestrictedAccessGuard.MemberIsVisibleAsync(client, clientContext, member))
+                        visible.Add(member);
+                }
+                members = visible;
+            }
 
-            return result?.Value?.Select(m => new
+            return members.Select(m => new
             {
                 m.Id,
                 m.DisplayName,
                 Roles = m.Roles != null ? string.Join(",", m.Roles) : ""
-            }) ?? [];
+            });
         });
     }
 }
