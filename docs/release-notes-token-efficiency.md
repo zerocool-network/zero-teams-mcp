@@ -26,3 +26,4 @@
 
 ## Deploy
 - Rebuild/restart del servidor MCP requerido. Ver `docs/SDD-token-efficiency-devmode.md`, `docs/adr/ADR-0010-token-efficient-mcp-responses.md`.
+- Producción (`optimafront-1`) activa `MCP_MAIL_DEFAULTS=efficient` desde 2026-11-09; rollback = quitar la línea de `server.env` y reiniciar `daemon-1150054:*`.
