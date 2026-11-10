@@ -26,6 +26,21 @@ public sealed class GraphService
         _delegatedProvider = delegatedProvider;
     }
 
+    /// <summary>
+    /// Solo tests: siembra un cliente ya autenticado (app-only) para no tocar MSAL/red.
+    /// </summary>
+    internal static GraphService ForTest(GraphServiceClient client)
+    {
+        var service = new GraphService(null!, null)
+        {
+            _clientCache =
+            {
+                ["app-only"] = new CachedClient(client, DateTimeOffset.UtcNow)
+            }
+        };
+        return service;
+    }
+
     public async Task<GraphServiceClient> GetClientAsync(
         string? userId = null,
         CancellationToken ct = default)

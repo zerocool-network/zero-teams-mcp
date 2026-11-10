@@ -19,7 +19,10 @@
 - En `TRANSPORT=stdio` los logs van a **stderr**; stdout queda solo para JSON-RPC (antes se mezclaban y rompían clientes estrictos).
 
 ## Compatibilidad
-- Defaults legacy en fase 1 para minimizar roturas; `ServerDisclosurePolicy` instruye params eficientes. Cambio futuro de defaults será versionado.
+- Defaults legacy sin `MCP_MAIL_DEFAULTS`; con `efficient` el cliente puede forzar `format`/`bodyFormat` explícitos. Cambio de defaults sin env será versionado.
+
+## Tests
+- `tests/ZeroTeamsMcp.Tests/MailSearchContractTests.cs`: contrato de red con Graph simulado — cursor → `$skip`, `$search` nunca lleva `$skip`, cursor inválido falla sin llamar a Graph y `coverage.cursor` reanuda (233/233).
 
 ## Deploy
 - Rebuild/restart del servidor MCP requerido. Ver `docs/SDD-token-efficiency-devmode.md`, `docs/adr/ADR-0010-token-efficient-mcp-responses.md`.

@@ -11,4 +11,7 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.0" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ZeroTeamsMcp.Tests" />
+  </ItemGroup>
 </Project>
