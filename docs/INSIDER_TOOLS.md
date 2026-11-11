@@ -42,6 +42,35 @@ Las claves del ControlPlane **no sirven aquí**: son superficies distintas.
 Para activarlo hay que poner `INSIDER_TOOLS=on` de forma explícita en el entorno: el servicio arranca, pero los tools
 no leen nada hasta que se habilite a propósito.
 
+### Producción actual (optimafront-1)
+
+Desplegado el 2026-11-11 como daemon de Forge `1222475` (`insider-mcp`), **solo loopback**:
+
+| Elemento | Valor |
+|---|---|
+| Base | `/home/forge/mcp-insider.optimaonline.eu` |
+| App | `app/ZeroTeamsMcp.Insider.dll` (publish `linux-x64`, framework-dependent) |
+| Entorno | `insider.env` (600), dueño `forge` |
+| Arranque | `insider.run.sh` (755) → `dotnet app/ZeroTeamsMcp.Insider.dll` |
+| Bind | `http://127.0.0.1:5300` |
+| Store | `data/insider.db` (SQLite WAL) |
+| Daemon | `/etc/supervisor/conf.d/daemon-1222475.conf` (creado por Forge) |
+
+Crear/actualizar el daemon **por Forge**, no copiando el `.conf` a mano (el usuario `forge` no tiene sudo para `cp`):
+
+```
+POST https://forge.laravel.com/api/orgs/<org>/servers/1216150/background-processes
+{"name":"insider-mcp","command":"/home/forge/mcp-insider.optimaonline.eu/insider.run.sh",
+ "user":"forge","directory":"/home/forge/mcp-insider.optimaonline.eu","processes":1}
+```
+
+Validación tras arrancar: `/health` → 200, `POST /mcp` sin `X-Insider-Key` → 401, `tools/list` con clave → 12 tools
+`insider_*`, y `data/insider.db` creado. No hay puerto público: el acceso es túnel
+`ssh -L 5300:127.0.0.1:5300 optimafront-1` y luego `http://127.0.0.1:5300/mcp`.
+
+Credenciales: reutiliza la App Registration del `server.env` de Teams (`INSIDER_AZURE_*` copiados). **Mientras no exista
+Application Access Policy, este proceso puede leer todos los buzones del tenant** — ver 1.1 antes de dar claves a nadie.
+
 1. Aplica primero la Application Access Policy (sección 1.1).
 2. Publica detrás de un reverse proxy con TLS.
 3. Fija `INSIDER_ALLOWED_IPS` con los rangos del proxy.
